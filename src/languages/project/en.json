@@ -1,0 +1,96 @@
+{
+  "common": {
+    "appName": "App"
+  },
+  "morphism": {
+    "assistantName": "Morphism",
+    "chatHeader": "AI Assistant",
+    "chatAria": "Chat with the AI assistant",
+    "greeting": "Hi! I can help you explore map data in plain language. Type what you'd like to know, or tap one of the examples below.",
+    "inputPlaceholder": "Ask anything about the map…",
+    "send": "Send question",
+    "thinking": "Working on it…",
+    "suggestLabel": "Try asking:",
+    "workspaceAria": "Map workspace",
+    "mapAria": "Map of Thailand",
+    "attributionAria": "Map data sources",
+    "timeAll": "All data (no time filter)",
+    "clearTime": "Clear time filter",
+    "context": "AI sees: {{layers}} layers · zoom {{zoom}}",
+    "layersTitle": "Data layers",
+    "openLayers": "Open data layers panel",
+    "aiMark": "AI",
+    "legendTitle": "Legend",
+    "legendEmpty": "No analysis layers yet",
+    "legendTotal": "{{count}} total",
+    "boundariesError": "Couldn't load province boundaries — showing totals only",
+    "legend": {
+      "hospitalsPublic": "Hospitals (public)",
+      "boundaryData": "Administrative boundary (data area only)"
+    },
+    "settingsTitle": "Layout direction",
+    "settingsAria": "Settings",
+    "openSettings": "Settings",
+    "theme": {
+      "title": "Theme",
+      "dark": "Dark",
+      "light": "Light"
+    },
+    "undo": "Undo",
+    "redo": "Redo",
+    "zoom": "Zoom map",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "resizeHandle": "Resize chat panel (drag or use arrow keys)",
+    "loading": "Loading data…",
+    "error": "Something went wrong, please try again",
+    "exportCsv": "CSV",
+    "exportPng": "PNG",
+    "layer": {
+      "hospitals": "Hospitals",
+      "flood": "Flood areas",
+      "buffer": "Analysis radius (buffer)",
+      "boundaries": "Administrative boundaries"
+    },
+    "dir": {
+      "ltr": "Chat left · Map right (default)",
+      "rtl": "Map left · Chat right"
+    },
+    "chips": {
+      "c1": "Show 24-hour hospitals in Bangkok",
+      "c2": "How many hospitals are in Chiang Mai?",
+      "c3": "How many hospitals are in the North?",
+      "c4": "Compare hospitals: North vs Northeast",
+      "c5": "Recent Songkran flooding events",
+      "c6": "Hospitals within 5 km of flood areas"
+    },
+    "steps": {
+      "parse": "Interpreting the question",
+      "query": "Fetching spatial data",
+      "render": "Rendering layers"
+    },
+    "reply": {
+      "hospitals": "I've shown the matching hospitals on the map.",
+      "flood": "I've shown the flood areas on the map.",
+      "buffer": "I've run the radius analysis and shown it on the map.",
+      "compare": "Here's the comparison you asked for, with a chart below.",
+      "floodSwipe": "I've opened the left–right flood comparison. Drag the divider to compare the two years.",
+      "generic": "Here's what I found for your question."
+    },
+    "swipe": {
+      "aria": "Flood swipe comparison mode",
+      "divider": "Comparison divider (drag or use the left/right arrow keys)",
+      "valueText": "Left side revealed {{pct}}%",
+      "close": "Close comparison"
+    },
+    "result": "Map layers updated",
+    "chartCompareTitle": "Hospital count comparison",
+    "chartCsvHeaderLabel": "Item",
+    "chartCsvHeaderValue": "Count",
+    "toast": {
+      "applied": "Map updated",
+      "undone": "Undone",
+      "redone": "Redone"
+    }
+  }
+}

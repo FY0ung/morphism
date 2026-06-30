@@ -1,0 +1,571 @@
+@import "tailwindcss";
+/* MapLibre base styles — imported globally so the canvas/controls are always
+   styled regardless of how the client map component is bundled (Turbopack can
+   skip CSS imported deep inside a dynamically-used client component). */
+@import "maplibre-gl/dist/maplibre-gl.css";
+@source "../../src/**/*.{js,ts,jsx,tsx}";
+
+
+@theme {
+  /* ===== Typography ===== */
+  /* Poppins (Latin, --font-font) + Anuphan (Thai, --font-thai) are loaded via
+     next/font (material/fonts) and exposed on <html>. --default-font-family makes
+     the pair the page-wide base, matching the HTML reference
+     (`--font-family-base: 'Poppins','Anuphan',system-ui,...`). Latin glyphs render
+     in Poppins; Thai glyphs fall through to Anuphan (loopless). */
+  --font-family-base:
+    var(--font-font), var(--font-thai), system-ui, -apple-system, sans-serif;
+  --default-font-family: var(--font-family-base);
+
+  /* ===== Background Colors ===== */
+  /* default */
+  --color-background-default-default: hsla(var(--background-default-default));
+  --color-background-default-hover: hsla(var(--background-default-hover));
+  --color-background-default-active: hsla(var(--background-default-active));
+  --color-background-default-light: hsla(var(--background-default-light));
+  --color-background-default-light_hover: hsla(var(--background-default-light-hover));
+  --color-background-default-light_active: hsla(var(--background-default-light-active));
+  --color-background-default-disable: hsla(var(--background-default-disable));
+  /* primary */
+  --color-background-primary-default: hsla(var(--background-primary-default));
+  --color-background-primary-hover: hsla(var(--background-primary-hover));
+  --color-background-primary-active: hsla(var(--background-primary-active));
+  --color-background-primary-light: hsla(var(--background-primary-light));
+  --color-background-primary-light_hover: hsla(var(--background-primary-light-hover));
+  --color-background-primary-light_active: hsla(var(--background-primary-light-active));
+  --color-background-primary-disable: hsla(var(--background-primary-disable));
+  /* secondary */
+  --color-background-secondary-default: hsla(var(--background-secondary-default));
+  --color-background-secondary-hover: hsla(var(--background-secondary-hover));
+  --color-background-secondary-active: hsla(var(--background-secondary-active));
+  --color-background-secondary-light: hsla(var(--background-secondary-light));
+  --color-background-secondary-light_hover: hsla(var(--background-secondary-light-hover));
+  --color-background-secondary-light_active: hsla(var(--background-secondary-light-active));
+  --color-background-secondary-disable: hsla(var(--background-secondary-disable));
+  /* success */
+  --color-background-success-default: hsla(var(--background-success-default));
+  --color-background-success-hover: hsla(var(--background-success-hover));
+  --color-background-success-active: hsla(var(--background-success-active));
+  --color-background-success-light: hsla(var(--background-success-light));
+  --color-background-success-light_hover: hsla(var(--background-success-light-hover));
+  --color-background-success-light_active: hsla(var(--background-success-light-active));
+  --color-background-success-disable: hsla(var(--background-success-disable));
+  /* warning */
+  --color-background-warning-default: hsla(var(--background-warning-default));
+  --color-background-warning-hover: hsla(var(--background-warning-hover));
+  --color-background-warning-active: hsla(var(--background-warning-active));
+  --color-background-warning-light: hsla(var(--background-warning-light));
+  --color-background-warning-light_hover: hsla(var(--background-warning-light-hover));
+  --color-background-warning-light_active: hsla(var(--background-warning-light-active));
+  --color-background-warning-disable: hsla(var(--background-warning-disable));
+  /* error */
+  --color-background-error-default: hsla(var(--background-error-default));
+  --color-background-error-hover: hsla(var(--background-error-hover));
+  --color-background-error-active: hsla(var(--background-error-active));
+  --color-background-error-light: hsla(var(--background-error-light));
+  --color-background-error-light_hover: hsla(var(--background-error-light-hover));
+  --color-background-error-light_active: hsla(var(--background-error-light-active));
+  --color-background-error-disable: hsla(var(--background-error-disable));
+  /* info */
+  --color-background-info-default: hsla(var(--background-info-default));
+  --color-background-info-hover: hsla(var(--background-info-hover));
+  --color-background-info-active: hsla(var(--background-info-active));
+  --color-background-info-light: hsla(var(--background-info-light));
+  --color-background-info-light_hover: hsla(var(--background-info-light-hover));
+  --color-background-info-light_active: hsla(var(--background-info-light-active));
+  --color-background-info-disable: hsla(var(--background-info-disable));
+
+  /* ===== Text Colors ===== */
+  --color-text-default-default: hsla(var(--text-default-default));
+  --color-text-default-onlight: hsla(var(--text-default-onlight));
+  --color-text-default-disable: hsla(var(--text-default-disable));
+  --color-text-primary-default: hsla(var(--text-primary-default));
+  --color-text-primary-onlight: hsla(var(--text-primary-onlight));
+  --color-text-primary-disable: hsla(var(--text-primary-disable));
+  --color-text-secondary-default: hsla(var(--text-secondary-default));
+  --color-text-secondary-onlight: hsla(var(--text-secondary-onlight));
+  --color-text-secondary-disable: hsla(var(--text-secondary-disable));
+  --color-text-success-default: hsla(var(--text-success-default));
+  --color-text-success-onlight: hsla(var(--text-success-onlight));
+  --color-text-success-disable: hsla(var(--text-success-disable));
+  --color-text-warning-default: hsla(var(--text-warning-default));
+  --color-text-warning-onlight: hsla(var(--text-warning-onlight));
+  --color-text-warning-disable: hsla(var(--text-warning-disable));
+  --color-text-error-default: hsla(var(--text-error-default));
+  --color-text-error-onlight: hsla(var(--text-error-onlight));
+  --color-text-error-disable: hsla(var(--text-error-disable));
+  --color-text-info-default: hsla(var(--text-info-default));
+  --color-text-info-onlight: hsla(var(--text-info-onlight));
+  --color-text-info-disable: hsla(var(--text-info-disable));
+
+  /* ===== Icon Colors ===== */
+  --color-icon-default-default: hsla(var(--icon-default-default));
+  --color-icon-default-onlight: hsla(var(--icon-default-onlight));
+  --color-icon-default-disable: hsla(var(--icon-default-disable));
+  --color-icon-primary-default: hsla(var(--icon-primary-default));
+  --color-icon-primary-onlight: hsla(var(--icon-primary-onlight));
+  --color-icon-primary-disable: hsla(var(--icon-primary-disable));
+  --color-icon-secondary-default: hsla(var(--icon-secondary-default));
+  --color-icon-secondary-onlight: hsla(var(--icon-secondary-onlight));
+  --color-icon-secondary-disable: hsla(var(--icon-secondary-disable));
+  --color-icon-success-default: hsla(var(--icon-success-default));
+  --color-icon-success-onlight: hsla(var(--icon-success-onlight));
+  --color-icon-success-disable: hsla(var(--icon-success-disable));
+  --color-icon-warning-default: hsla(var(--icon-warning-default));
+  --color-icon-warning-onlight: hsla(var(--icon-warning-onlight));
+  --color-icon-warning-disable: hsla(var(--icon-warning-disable));
+  --color-icon-error-default: hsla(var(--icon-error-default));
+  --color-icon-error-onlight: hsla(var(--icon-error-onlight));
+  --color-icon-error-disable: hsla(var(--icon-error-disable));
+  --color-icon-info-default: hsla(var(--icon-info-default));
+  --color-icon-info-onlight: hsla(var(--icon-info-onlight));
+  --color-icon-info-disable: hsla(var(--icon-info-disable));
+
+  /* ===== Border Colors ===== */
+  --color-border-default-default: hsla(var(--border-default-default));
+  --color-border-default-onlight: hsla(var(--border-default-onlight));
+  --color-border-default-disable: hsla(var(--border-default-disable));
+  --color-border-primary-default: hsla(var(--border-primary-default));
+  --color-border-primary-onlight: hsla(var(--border-primary-onlight));
+  --color-border-primary-disable: hsla(var(--border-primary-disable));
+  --color-border-secondary-default: hsla(var(--border-secondary-default));
+  --color-border-secondary-onlight: hsla(var(--border-secondary-onlight));
+  --color-border-secondary-disable: hsla(var(--border-secondary-disable));
+  --color-border-success-default: hsla(var(--border-success-default));
+  --color-border-success-onlight: hsla(var(--border-success-onlight));
+  --color-border-success-disable: hsla(var(--border-success-disable));
+  --color-border-warning-default: hsla(var(--border-warning-default));
+  --color-border-warning-onlight: hsla(var(--border-warning-onlight));
+  --color-border-warning-disable: hsla(var(--border-warning-disable));
+  --color-border-error-default: hsla(var(--border-error-default));
+  --color-border-error-onlight: hsla(var(--border-error-onlight));
+  --color-border-error-disable: hsla(var(--border-error-disable));
+  --color-border-info-default: hsla(var(--border-info-default));
+  --color-border-info-onlight: hsla(var(--border-info-onlight));
+  --color-border-info-disable: hsla(var(--border-info-disable));
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  font-family: var(--font-family-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+  /* padding: 0;
+  margin: 0; */
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+@layer base {
+  :root {
+/* background default*/
+    --background-default-default: 0, 0%, 100%;
+    --background-default-hover: 0, 0%, 96%;
+    --background-default-active: 0, 0%, 96%;
+    --background-default-light: 0, 0%, 96%;
+    --background-default-light-hover: 0, 0%, 90%;
+    --background-default-light-active: 0, 0%, 90%;
+    --background-default-disable: 0, 0%, 96%;
+    /* background primary*/
+    --background-primary-default: 221, 50%, 74%;
+    --background-primary-hover: 225, 47%, 67%;
+    --background-primary-active: 225, 47%, 67%;
+    --background-primary-light: 212, 55%, 94%;
+    --background-primary-light-hover: 215, 54%, 89%;
+    --background-primary-light-active: 215, 54%, 89%;
+    --background-primary-disable: 0, 0%, 96%;
+    /* background secondary*/
+    --background-secondary-default: 338, 69%, 75%;
+    --background-secondary-hover: 341, 57%, 60%;
+    --background-secondary-active: 341, 57%, 60%;
+    --background-secondary-light: 334, 55%, 96%;
+    --background-secondary-light-hover: 336, 73%, 91%;
+    --background-secondary-light-active: 336, 73%, 91%;
+    --background-secondary-disable: 0, 0%, 96%;
+    /* background success*/
+    --background-success-default: 148, 73%, 40%;
+    --background-success-hover: 148, 79%, 34%;
+    --background-success-active: 148, 79%, 34%;
+    --background-success-light: 146, 89%, 96%;
+    --background-success-light-hover: 147, 76%, 89%;
+    --background-success-light-active: 147, 76%, 89%;
+    --background-success-disable: 0, 0%, 96%;
+    /* background warning*/
+    --background-warning-default: 42, 96%, 54%;
+    --background-warning-hover: 36, 88%, 50%;
+    --background-warning-active: 36, 88%, 50%;
+    --background-warning-light: 48, 100%, 96%;
+    --background-warning-light-hover: 46, 100%, 88%;
+    --background-warning-light-active: 46, 100%, 88%;
+    --background-warning-disable: 0, 0%, 96%;
+    /* background error*/
+    --background-error-default: 1, 100%, 62%;
+    --background-error-hover: 1, 84%, 51%;
+    --background-error-active: 1, 84%, 51%;
+    --background-error-light: 0, 100%, 96%;
+    --background-error-light-hover: 1, 100%, 89%;
+    --background-error-light-active: 1, 100%, 89%;
+    --background-error-disable: 0, 0%, 96%;
+    /* background info*/
+    --background-info-default: 204, 95%, 48%;
+    --background-info-hover: 207, 100%, 40%;
+    --background-info-active: 207, 100%, 40%;
+    --background-info-light: 210, 100%, 96%;
+    --background-info-light-hover: 206, 100%, 86%;
+    --background-info-light-active: 206, 100%, 86%;
+    --background-info-disable: 0, 0%, 96%;
+    /* background utilities*/
+
+    /* -------------------------------------------------- */
+    /* text default*/
+    --text-default-default: 0, 0%, 12%;
+    --text-default-onlight: 0, 0%, 27%;
+    --text-default-disable: 0, 0%, 70%;
+    /* text primary*/
+    --text-primary-default: 231, 27%, 20%;
+    --text-primary-onlight: 230, 31%, 41%;
+    --text-primary-disable: 0, 0%, 70%;
+    /* text secondary*/
+    --text-secondary-default: 347, 59%, 17%;
+    --text-secondary-onlight: 346, 53%, 35%;
+    --text-secondary-disable: 0, 0%, 70%;
+    /* text success*/
+    --text-success-default: 147, 90%, 96%;
+    --text-success-onlight: 149, 67%, 24%;
+    --text-success-disable: 0, 0%, 70%;
+    /* text warning*/
+    --text-warning-default: 48, 100%, 96%;
+    --text-warning-onlight: 21, 85%, 31%;
+    --text-warning-disable: 0, 0%, 70%;
+    /* text error*/
+    --text-error-default: 0, 100%, 96%;
+    --text-error-onlight: 1, 82%, 35%;
+    --text-error-disable: 0, 0%, 70%;
+    /* text info*/
+    --text-info-default: 210, 100%, 96%;
+    --text-info-onlight: 206, 97%, 27%;
+    --text-info-disable: 0, 0%, 70%;
+    /* text utilities*/
+    /* -------------------------------------------------- */
+    /* icon default*/
+    --icon-default-default: 0, 0%, 12%;
+    --icon-default-onlight: 0, 0%, 27%;
+    --icon-default-disable: 0, 0%, 70%;
+    /* icon primary*/
+    --icon-primary-default: 231, 27%, 20%;
+    --icon-primary-onlight: 230, 31%, 41%;
+    --icon-primary-disable: 0, 0%, 70%;
+    /* icon secondary*/
+    --icon-secondary-default: 347, 59%, 17%;
+    --icon-secondary-onlight: 346, 53%, 35%;
+    --icon-secondary-disable: 0, 0%, 70%;
+    /* icon success*/
+    --icon-success-default: 147, 90%, 96%;
+    --icon-success-onlight: 149, 67%, 24%;
+    --icon-success-disable: 0, 0%, 70%;
+    /* icon warning*/
+    --icon-warning-default: 48, 100%, 96%;
+    --icon-warning-onlight: 21, 85%, 31%;
+    --icon-warning-disable: 0, 0%, 70%;
+    /* icon error*/
+    --icon-error-default: 0, 100%, 96%;
+    --icon-error-onlight: 1, 82%, 35%;
+    --icon-error-disable: 0, 0%, 70%;
+    /* icon info*/
+    --icon-info-default: 210, 100%, 96%;
+    --icon-info-onlight: 206, 97%, 27%;
+    --icon-info-disable: 0, 0%, 70%;
+    /* -------------------------------------------------- */
+    /* border default*/
+    --border-default-default: 0, 0%, 85%;
+    --border-default-onlight: 0, 0%, 46%;
+    --border-default-disable: 0, 0%, 70%;
+    /* border primary*/
+    --border-primary-default: 230, 42%, 59%;
+    --border-primary-onlight: 225, 47%, 67%;
+    --border-primary-disable: 0, 0%, 70%;
+    /* border secondary*/
+    --border-secondary-default: 344, 51%, 51%;
+    --border-secondary-onlight: 341, 57%, 60%;
+    --border-secondary-disable: 0, 0%, 70%;
+    /* border success*/
+    --border-success-default: 148, 74%, 29%;
+    --border-success-onlight: 148, 74%, 40%;
+    --border-success-disable: 0, 0%, 70%;
+    /* border warning*/
+    --border-warning-default: 25, 94%, 37%;
+    --border-warning-onlight: 36, 88%, 50%;
+    --border-warning-disable: 0, 0%, 70%;
+    /* border error*/
+    --border-error-default: 1, 86%, 42%;
+    --border-error-onlight: 1, 100%, 62%;
+    --border-error-disable: 0, 0%, 70%;
+    /* border info*/
+    --border-info-default: 207, 100%, 33%;
+    --border-info-onlight: 204, 95%, 48%;
+    --border-info-disable: 0, 0%, 70%;
+    /* -------------------------------------------------- */
+
+  }
+
+  .dark {
+    /* background default*/
+    --background-default-default: 0, 0%, 12%;
+    --background-default-hover: 0, 0%, 17%;
+    --background-default-active: 0, 0%, 17%;
+    --background-default-light: 0, 0%, 17%;
+    --background-default-light-hover: 0, 0%, 22%;
+    --background-default-light-active: 0, 0%, 22%;
+    --background-default-disable: 0, 0%, 17%;
+    /* background primary*/
+    --background-primary-default: 230, 42%, 59%;
+    --background-primary-hover: 231, 33%, 51%;
+    --background-primary-active: 231, 33%, 51%;
+    --background-primary-light: 229, 27%, 34%; 
+    --background-primary-light-hover: 231, 27%, 20%; 
+    --background-primary-light-active: 231, 27%, 20%; 
+    --background-primary-disable: 0, 0%, 17%;
+    /* background secondary*/
+    --background-secondary-default: 344, 51%, 51%;  
+    --background-secondary-hover: 346, 55%, 42%; 
+    --background-secondary-active: 346, 55%, 42%;  
+    --background-secondary-light: 346, 50%, 30%;
+    --background-secondary-light-hover: 347, 59%, 17%; 
+    --background-secondary-light-active: 347, 59%, 17%; 
+    --background-secondary-disable: 0, 0%, 17%;
+    /* background success*/
+    --background-success-default: 148, 79%, 34%;
+    --background-success-hover: 148, 74%, 29%; 
+    --background-success-active: 148, 74%, 29%; 
+    --background-success-light: 150, 63%, 20%; 
+    --background-success-light-hover: 151, 84%, 10%; 
+    --background-success-light-active: 151, 84%, 10%; 
+    --background-success-disable: 0, 0%, 17%;
+    /* background warning*/
+    --background-warning-default: 31, 98%, 44%; 
+    --background-warning-hover: 25, 94%, 37%;
+    --background-warning-active: 25, 94%, 37%; 
+    --background-warning-light: 20, 81%, 26%;
+    --background-warning-light-hover: 19, 94%, 14%;
+    --background-warning-light-active: 19, 94%, 14%;
+    --background-warning-disable: 0, 0%, 17%;
+    /* background error*/
+    --background-error-default: 1, 84%, 51%;
+    --background-error-hover: 1, 86%, 42%;
+    --background-error-active: 1, 86%, 42%;
+    --background-error-light: 1, 73%, 31%;
+    --background-error-light-hover: 1, 87%, 15%;
+    --background-error-light-active: 1, 87%, 15%;
+    --background-error-disable: 0, 0%, 17%;
+    /* background info*/
+    --background-info-default: 207, 100%, 40%;
+    --background-info-hover: 207, 100%, 33%;
+    --background-info-active: 207, 100%, 33%;
+    --background-info-light: 208, 87%, 24%;
+    --background-info-light-hover: 210, 85%, 16%;
+    --background-info-light-active: 210, 85%, 16%;
+    --background-info-disable: 0, 0%, 17%;
+    /* background utilities*/
+
+    /* -------------------------------------------------- */
+    /* text default*/
+    --text-default-default: 0, 0%, 90%;
+    --text-default-onlight: 0, 0%, 70%;
+    --text-default-disable: 0, 0%, 46%;
+    /* text primary*/
+    --text-primary-default: 215, 54%, 89%;
+    --text-primary-onlight: 221, 50%, 74%;
+    --text-primary-disable: 0, 0%, 46%;
+    /* text secondary*/
+    --text-secondary-default: 336, 73%, 91%;
+    --text-secondary-onlight: 338, 69%, 75%;
+    --text-secondary-disable: 0, 0%, 46%;
+    /* text success*/
+    --text-success-default: 147, 90%, 96%;
+    --text-success-onlight: 148, 72%, 48%;
+    --text-success-disable: 0, 0%, 46%;
+    /* text warning*/
+    --text-warning-default: 48, 100%, 96%;
+    --text-warning-onlight: 42, 96%, 54%;
+    --text-warning-disable: 0, 0%, 46%;
+    /* text error*/
+    --text-error-default: 0, 100%, 96%;
+    --text-error-onlight: 1, 100%, 72%;
+    --text-error-disable: 0, 0%, 46%;
+    /* text info*/
+    --text-info-default: 210, 100%, 96%;
+    --text-info-onlight: 204, 100%, 66%;
+    --text-info-disable: 0, 0%, 46%;
+    /* text utilities*/
+    /* -------------------------------------------------- */
+    /* icon default*/
+    --icon-default-default: 0, 0%, 90%;
+    --icon-default-onlight: 0, 0%, 70%;
+    --icon-default-disable: 0, 0%, 46%;
+    /* icon primary*/
+    --icon-primary-default: 215, 54%, 89%;
+    --icon-primary-onlight: 221, 50%, 74%;
+    --icon-primary-disable: 0, 0%, 46%;
+    /* icon secondary*/
+    --icon-secondary-default: 336, 73%, 91%;
+    --icon-secondary-onlight: 338, 69%, 75%;
+    --icon-secondary-disable: 0, 0%, 46%;
+    /* icon success*/
+    --icon-success-default: 147, 90%, 96%;
+    --icon-success-onlight: 148, 72%, 48%;
+    --icon-success-disable: 0, 0%, 46%;
+    /* icon warning*/
+    --icon-warning-default: 48, 100%, 96%;
+    --icon-warning-onlight: 42, 96%, 54%;
+    --icon-warning-disable: 0, 0%, 46%;
+    /* icon error*/
+    --icon-error-default: 0, 100%, 96%;
+    --icon-error-onlight: 1, 100%, 72%;
+    --icon-error-disable: 0, 0%, 46%;
+    /* icon info*/
+    --icon-info-default: 210, 100%, 96%;
+    --icon-info-onlight: 204, 100%, 66%;
+    --icon-info-disable: 0, 0%, 46%;
+    /* -------------------------------------------------- */
+    /* border default*/
+    --border-default-default: 0, 0%, 22%;
+    --border-default-onlight: 0, 0%, 27%;
+    --border-default-disable: 0, 0%, 27%;
+    /* border primary*/
+    --border-primary-default: 225, 47%, 67%;
+    --border-primary-onlight: 230, 31%, 41%;
+    --border-primary-disable: 0, 0%, 27%;
+    /* border secondary*/
+    --border-secondary-default: 341, 57%, 60%;
+    --border-secondary-onlight: 346, 53%, 35%;
+    --border-secondary-disable: 0, 0%, 27%;
+    /* border success*/
+    --border-success-default: 148, 74%, 40%;
+    --border-success-onlight: 149, 67%, 24%;
+    --border-success-disable: 0, 0%, 27%;
+    /* border warning*/
+    --border-warning-default: 36, 88%, 50%;
+    --border-warning-onlight: 21, 85%, 31%;
+    --border-warning-disable: 0, 0%, 27%;
+    /* border error*/
+    --border-error-default: 1, 100%, 62%;
+    --border-error-onlight: 1, 82%, 35%;
+    --border-error-disable: 0, 0%, 27%;
+    /* border info*/
+    --border-info-default: 204, 95%, 48%;
+    --border-info-onlight: 206, 97%, 27%;
+    --border-info-disable: 0, 0%, 27%;
+    /* -------------------------------------------------- */
+  }
+}
+
+.cesium-widget-credits {
+  display: none !important;
+}
+
+#sticky {
+  position: -webkit-fixed;
+  position: fixed;
+  top: 72px;
+  z-index: 100
+}
+
+.next-video-alert {
+  display: none !important
+}
+
+
+html {
+  scroll-behavior: smooth;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+}
+
+/* ===== MapLibre control overrides → design tokens =====
+   Mirrors the HTML reference: the zoom control becomes a single dark capsule
+   (40×40 buttons, rounded top/bottom) sitting above the settings gear. */
+.maplibregl-ctrl-bottom-right {
+  /* Leaves room below the zoom controls for the Settings gear + status chip. */
+  margin-bottom: 116px;
+}
+.maplibregl-ctrl-group {
+  background: none !important;
+  border: none !important;
+  /* Capsule radius so the shadow follows the rounded control instead of
+     casting a square box behind it. */
+  border-radius: 9999px !important;
+  box-shadow:
+    0 4px 4px -4px rgb(0 0 0 / 0.2),
+    0 16px 32px -10px rgb(0 0 0 / 0.3) !important;
+  display: flex !important;
+  flex-direction: column;
+  gap: 0;
+  overflow: visible !important;
+}
+.maplibregl-ctrl-group button {
+  width: 40px !important;
+  height: 40px !important;
+  background: var(--color-background-default-default) !important;
+  border: 1px solid var(--color-border-default-default) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-default-default);
+  transition: border-color 240ms;
+}
+.maplibregl-ctrl-group button:first-child {
+  border-radius: 9999px 9999px 0 0 !important;
+}
+.maplibregl-ctrl-group button:last-child {
+  border-radius: 0 0 9999px 9999px !important;
+  border-top: none !important;
+}
+.maplibregl-ctrl-group button:hover {
+  border-color: var(--color-border-primary-default) !important;
+  z-index: 1;
+}
+.maplibregl-ctrl-group button:last-child:hover {
+  border-top: 1px solid var(--color-border-primary-default) !important;
+}
+/* Default +/− glyphs are dark; invert so they read on the dark buttons. */
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1);
+}
+/* Themed popups, matching the reference card style. */
+.maplibregl-popup-content {
+  background: var(--color-background-default-default) !important;
+  color: var(--color-text-default-default) !important;
+  border: 1px solid var(--color-border-default-default);
+  border-radius: 12px !important;
+  font-family: var(--font-family-base) !important;
+  font-size: 13px !important;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.45) !important;
+  padding: 12px 16px !important;
+}
+.maplibregl-popup-tip {
+  border-top-color: var(--color-background-default-default) !important;
+}
