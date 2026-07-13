@@ -1,5 +1,13 @@
 // Pure geospatial helpers — no DOM, no map runtime. Safe to import anywhere.
-import type { BBox, Feature, FeatureCollection, Position } from "@/types";
+import type {
+  AdmFC,
+  AdmProps,
+  BBox,
+  Feature,
+  FeatureCollection,
+  Geometry,
+  Position,
+} from "@/types";
 
 const R_EARTH_KM = 6371;
 const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -46,6 +54,130 @@ export function pointInRing(point: Position, ring: Position[]): boolean {
     if (intersect) inside = !inside;
   }
   return inside;
+}
+
+/** Ray-cast point-in-polygon for a Polygon/MultiPolygon geometry, hole-aware. */
+export function polyContains(geom: Geometry, x: number, y: number): boolean {
+  const polys: Position[][][] =
+    geom.type === "Polygon"
+      ? [geom.coordinates]
+      : geom.type === "MultiPolygon"
+        ? geom.coordinates
+        : [];
+  for (const poly of polys) {
+    if (!poly.length || !pointInRing([x, y], poly[0])) continue;
+    let inHole = false;
+    for (let k = 1; k < poly.length; k++) {
+      if (pointInRing([x, y], poly[k])) {
+        inHole = true;
+        break;
+      }
+    }
+    if (!inHole) return true;
+  }
+  return false;
+}
+
+/** Bounding box of a single geometry (Polygon/MultiPolygon), as [w,s,e,n]. */
+function geomBBox(geom: Geometry): BBox {
+  let w = Infinity;
+  let s = Infinity;
+  let e = -Infinity;
+  let n = -Infinity;
+  const polys: Position[][][] =
+    geom.type === "Polygon"
+      ? [geom.coordinates]
+      : geom.type === "MultiPolygon"
+        ? geom.coordinates
+        : [];
+  polys.forEach((p) =>
+    p[0]?.forEach(([x, y]) => {
+      if (x < w) w = x;
+      if (y < s) s = y;
+      if (x > e) e = x;
+      if (y > n) n = y;
+    }),
+  );
+  return [w, s, e, n];
+}
+
+// Per-feature bbox cache — keyed by the feature object (WeakMap → auto-GC).
+const bboxCache = new WeakMap<Feature<AdmProps>, BBox>();
+
+/** bbox prefilter → ray-cast (fast for many features / many points). */
+export function fastContains(f: Feature<AdmProps>, x: number, y: number): boolean {
+  let bb = bboxCache.get(f);
+  if (!bb) {
+    bb = geomBBox(f.geometry);
+    bboxCache.set(f, bb);
+  }
+  if (x < bb[0] || x > bb[2] || y < bb[1] || y > bb[3]) return false;
+  return polyContains(f.geometry, x, y);
+}
+
+/**
+ * For each admin unit, count how many of `points` fall inside it, and return
+ * ONLY the units with count > 0 (count written to properties.count). Mirrors the
+ * HTML `unitsWithData()` — the driver of context-aware boundary aggregation.
+ */
+export function unitsWithData(
+  units: Feature<AdmProps>[],
+  points: Position[],
+): AdmFC {
+  const features: Feature<AdmProps>[] = [];
+  if (!units.length || !points.length) {
+    return { type: "FeatureCollection", features };
+  }
+  for (const u of units) {
+    let count = 0;
+    for (const c of points) if (fastContains(u, c[0], c[1])) count++;
+    if (count > 0) {
+      features.push({
+        ...u,
+        properties: { ...u.properties, count },
+      });
+    }
+  }
+  return { type: "FeatureCollection", features };
+}
+
+/**
+ * Canonical Thai province name for reliable comparison. Strips the "จังหวัด"
+ * prefix, whitespace and a trailing "ฯ", and folds every Bangkok alias
+ * (กรุงเทพ / กรุงเทพฯ / Bangkok / BKK) to "กรุงเทพมหานคร". Empty/blank → "".
+ * NEVER use loose substring matching for provinces — `"x".includes("")` is
+ * always true, which leaks blank-province rows into every query.
+ */
+export function normalizeProvinceName(raw: string | undefined | null): string {
+  let s = (raw ?? "").trim();
+  if (!s) return "";
+  s = s.replace(/^จังหวัด\s*/, "").replace(/\s+/g, "");
+  const low = s.toLowerCase();
+  if (low === "bangkok" || low === "bkk" || s.startsWith("กรุงเทพ")) {
+    return "กรุงเทพมหานคร";
+  }
+  return s.replace(/ฯ$/, "");
+}
+
+/** Rough centroid of a Polygon/MultiPolygon (mean of the outer ring vertices). */
+export function polygonCentroid(geom: Geometry): [number, number] {
+  const ring: Position[] =
+    geom.type === "Polygon"
+      ? geom.coordinates[0]
+      : geom.type === "MultiPolygon"
+        ? // largest outer ring wins
+          geom.coordinates
+            .map((p) => p[0])
+            .sort((a, b) => b.length - a.length)[0] ?? []
+        : [];
+  if (!ring.length) return [0, 0];
+  let sx = 0;
+  let sy = 0;
+  for (const [x, y] of ring) {
+    sx += x;
+    sy += y;
+  }
+  return [sx / ring.length, sy / ring.length];
 }
 
 /** Bounding box of every coordinate in a FeatureCollection. */

@@ -18,7 +18,7 @@ export default function MessageList({ messages }: Props) {
 
   return (
     <div
-      className="no-scrollbar flex flex-1 flex-col gap-3 overflow-y-auto p-4"
+      className="no-scrollbar flex flex-1 flex-col gap-4 overflow-y-auto p-4"
       aria-live="polite"
     >
       {messages.map((m) => (

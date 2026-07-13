@@ -2,6 +2,7 @@
 
 import { useTranslation } from "react-i18next";
 import { SUGGESTION_CHIPS } from "../../const";
+import { Tag } from "@/components/selection/Tag";
 
 interface Props {
   onPick: (text: string) => void;
@@ -13,23 +14,25 @@ export default function SuggestionChips({ onPick, disabled }: Props) {
   const { t } = useTranslation();
 
   return (
-    <div className="border-t border-border-default-default px-4 py-2">
-      <span className="mb-2 block text-xs font-semibold text-text-default-onlight">
+    <div className="flex flex-col gap-2 border-t border-border-default-default p-4">
+      <p className="text-xs font-medium text-text-default-onlight">
         {t("morphism.suggestLabel")}
-      </span>
-      <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+      </p>
+      <div className="no-scrollbar flex gap-2 overflow-x-auto">
         {SUGGESTION_CHIPS.map((key) => {
           const label = t(key);
           return (
-            <button
+            <Tag
               key={key}
-              type="button"
-              disabled={disabled}
+              variant="outline" 
+              color="default" 
+              size="small"
               onClick={() => onPick(label)}
-              className="min-h-8 flex-none whitespace-nowrap rounded-full border border-border-default-onlight px-4 py-1.5 text-[13px] text-text-default-onlight transition-all hover:-translate-y-px hover:border-border-primary-default hover:bg-background-primary-light hover:text-text-primary-onlight disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:hover:translate-y-0"
+              // disabled={disabled}
             >
               {label}
-            </button>
+
+            </Tag>
           );
         })}
       </div>

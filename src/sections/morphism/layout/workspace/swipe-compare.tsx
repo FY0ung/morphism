@@ -3,12 +3,12 @@
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
-  RefObject,
 } from "react";
 import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/actionable/Buttons";
 import { Icon } from "@/components/icons";
+import { FLOOD_COMPARE_SIDES } from "@/configs/flood-compare";
 
 interface Props {
   active: boolean;
@@ -16,8 +16,6 @@ interface Props {
   yearA: number;
   /** ปี (พ.ศ.) ฝั่งขวา */
   yearB: number;
-  /** container ของแผนที่ซ้อน (เป็นของ useFloodSwipe) */
-  containerRef: RefObject<HTMLDivElement | null>;
   /** เปอร์เซ็นต์ที่เผยฝั่งซ้าย (0–100) */
   clip: number;
   onClipChange: (pct: number) => void;
@@ -36,7 +34,6 @@ export default function SwipeCompare({
   active,
   yearA,
   yearB,
-  containerRef,
   clip,
   onClipChange,
   onClose,
@@ -93,7 +90,8 @@ export default function SwipeCompare({
 
   const pct = Math.round(clip);
   const tagClass =
-    "pointer-events-none absolute top-16 z-10 rounded-full border border-border-default-default bg-background-default-default px-2.5 py-1 text-xs font-semibold text-text-default-onlight shadow-md";
+    "pointer-events-none absolute top-16 z-10 inline-flex items-center gap-1.5 rounded-full border border-border-default-default bg-background-default-default px-2.5 py-1 text-xs font-semibold text-text-default-onlight shadow-md";
+  const dotClass = "size-2.5 flex-none rounded-full";
 
   return (
     // The wrapper itself is click-through so the main map underneath stays
@@ -104,17 +102,15 @@ export default function SwipeCompare({
       role="group"
       aria-label={t("morphism.swipe.aria")}
     >
-      {/* the clipped overlay map */}
-      <div
-        ref={containerRef}
-        aria-hidden
-        className="absolute inset-0"
-        style={{ clipPath: `inset(0 ${100 - clip}% 0 0)` }}
-      />
-
-      {/* corner tags labelling each side */}
-      <span className={`${tagClass} left-3`}>{yearA}</span>
-      <span className={`${tagClass} right-3`}>{yearB}</span>
+      {/* corner tags labelling each side — dot colour matches the map layer */}
+      <span className={`${tagClass} left-3`}>
+        <span className={`${dotClass} ${FLOOD_COMPARE_SIDES.a.bg}`} aria-hidden />
+        {t("morphism.swipe.side", { year: yearA })}
+      </span>
+      <span className={`${tagClass} right-3`}>
+        <span className={`${dotClass} ${FLOOD_COMPARE_SIDES.b.bg}`} aria-hidden />
+        {t("morphism.swipe.side", { year: yearB })}
+      </span>
 
       {/* draggable divider (focusable slider) */}
       <div

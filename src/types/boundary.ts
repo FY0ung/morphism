@@ -22,3 +22,20 @@ export interface ProvinceBoundaryProps {
 }
 
 export type ProvinceBoundaryFC = FeatureCollection<ProvinceBoundaryProps>;
+
+// ── Multi-level administrative boundaries (lazy-loaded by zoom) ──
+// ADM1 = province, ADM2 = district (อำเภอ/เขต), ADM3 = subdistrict (ตำบล/แขวง).
+export type AdmLevel = "ADM1" | "ADM2" | "ADM3";
+
+// Normalised props (from chingchai/OpenGISData-Thailand). `count` is attached
+// after point-in-polygon aggregation; `color` after region tagging (optional).
+export interface AdmProps {
+  name: string;
+  /** Parent province code — used to filter ADM2/ADM3 to the focused provinces. */
+  pro_code?: string;
+  amp_code?: string;
+  count?: number;
+  color?: string;
+}
+
+export type AdmFC = FeatureCollection<AdmProps>;

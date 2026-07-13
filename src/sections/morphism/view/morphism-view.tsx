@@ -4,25 +4,32 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { useTranslation } from "react-i18next";
 import {
+  useAdminHierarchy,
   useAiAssistant,
   useChatResizer,
   useFloodSwipe,
   useMapLayers,
   useMorphismMap,
 } from "@/hooks";
-import { getFlood, getProvinceBoundaries, getHospitals } from "@/lib/api";
-import { bboxOf } from "@/lib/geo";
+import {
+  getFloodAreas,
+  getProvinceBoundaries,
+  getHospitals,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { emptyFC } from "@/types";
 import type {
-  FloodFC,
-  FloodProps,
+  BBox,
+  FloodAreaFC,
+  FloodScenarioMeta,
   HospitalFC,
   LayerId,
   LayoutDirection,
+  Position,
   ProvinceBoundaryFC,
   ProvinceCount,
   Scenario,
+  ScenarioStepReporter,
+  ScenarioOutcome,
   SwipeCompare as SwipeCompareState,
 } from "@/types";
 import {
@@ -30,12 +37,19 @@ import {
   MOCK_HOSPITALS,
   MOCK_FLOOD,
   MOCK_BUFFER,
+  MOCK_BUFFER_CENTERS,
   MOCK_BOUNDARIES,
+  FLOOD_ANALYSIS_CENTERS,
+  FLOOD_ANALYSIS_RADIUS_KM,
+  floodForYear,
   REGION_TOKEN_VAR,
   REGION_DEFAULT_TOKEN,
   provinceRegion,
+  COMPARE_LEGEND,
 } from "../const";
 import { readCssColor } from "@/lib/map-tokens";
+import { bboxOf, distanceKm, normalizeProvinceName } from "@/lib/geo";
+import { buildFloodHexLevels } from "@/lib/flood-overview";
 import {
   ChatPanel,
   HistoryControls,
@@ -53,6 +67,24 @@ import {
 import { Tag } from "@/components/selection/Tag";
 
 const TOAST_MS = 2200;
+// Flood camera transition — capped short (still smooth, uses the map's easing)
+// so scenario completion isn't gated on an unnecessarily long animation.
+const FLOOD_FIT_DURATION = 700;
+
+/**
+ * Explicit flood-scenario lifecycle. Completion ("complete") is only reached
+ * AFTER the data is committed to the map source AND the camera transition has
+ * finished (moveend) — so the chat/tool-steps never report done before the map
+ * has actually updated.
+ */
+type FloodScenarioStatus =
+  | "idle"
+  | "loading-data"
+  | "updating-map"
+  | "moving-camera"
+  | "complete"
+  | "empty"
+  | "error";
 
 const MorphismView = () => {
   const { t } = useTranslation();
@@ -67,21 +99,53 @@ const MorphismView = () => {
   const [timeLabel, setTimeLabel] = useState<string | null>(null);
   // Province-aggregation summary currently on the map (for the legend).
   const [aggregate, setAggregateState] = useState<ProvinceCount[] | null>(null);
+  // Region-compare legend rows (label + colour class), null when not comparing.
+  const [compareLegend, setCompareLegend] = useState<
+    { label: string; swatch: string }[] | null
+  >(null);
   // Active boundary colour (same source as the polygons) → legend swatch.
   const [boundaryColor, setBoundaryColor] = useState<string | null>(null);
-  // Real province polygons fetched from the open GeoJSON service.
+  // Real province polygons fetched from the open GeoJSON service. A version
+  // counter bumps when they arrive so a scenario that ran BEFORE the fetch
+  // completed can redraw its region boundaries (fixes "labels but no polygons").
   const boundariesRef = useRef<ProvinceBoundaryFC | null>(null);
+  const [boundariesVersion, setBoundariesVersion] = useState(0);
   const [boundariesError, setBoundariesError] = useState(false);
+  // Last aggregate scenario — replayed when the province polygons finish loading.
+  const pendingAggScenarioRef = useRef<Scenario | null>(null);
   // Real hospital points (public registry, 10k+). Fed to the map source so the
   // zoom gate has actual data to reveal at zoom ≥ 11.8.
   const [hospitalsFC, setHospitalsFC] = useState<HospitalFC | null>(null);
+  // For the flood-buffer scenario: only the hospitals inside the 5 km buffer
+  // (flagged risk → red). Null = feed the full dataset.
+  const [pointOverride, setPointOverride] = useState<HospitalFC | null>(null);
+  // Live flood areas for the active date-based flood scenario (Vallaris via the
+  // /api/flood proxy). Null → the map's flood source falls back to MOCK_FLOOD
+  // (only shown when another scenario toggles the flood layer).
+  const [floodAreas, setFloodAreas] = useState<FloodAreaFC | null>(null);
+  // Active date-based flood scenario metadata (STABLE PRIMITIVES drive the fetch
+  // effect — never the fetched FeatureCollection). Null when not in flood mode.
+  const [floodMeta, setFloodMeta] = useState<FloodScenarioMeta | null>(null);
+  // True when the proxy returned a partial sample (dev fixture / truncated).
+  const [floodPartial, setFloodPartial] = useState(false);
+  // Explicit flood load state machine. Drives an ATOMIC transition: during
+  // "loading" the current map (basemap + previous geometry) is preserved and the
+  // camera never moves; only on "success" is the source replaced in one shot,
+  // the flood layer revealed, and the camera fitted exactly once.
+  const [floodStatus, setFloodStatus] = useState<FloodScenarioStatus>("idle");
+  // Monotonic request id → ignore stale responses (rapid re-query / switch-away).
+  const floodRequestIdRef = useRef(0);
+  // Bounds already fitted (keyed by scenario+bbox) → fitBounds runs once/dataset.
+  const floodBoundsRef = useRef<string | null>(null);
+  // In-flight flood request controller → aborted when a new scenario starts.
+  const floodAbortRef = useRef<AbortController | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Flood swipe-compare: which two years, plus the polygons for each side.
+  // Flood swipe-compare: which two years. Both years are drawn + clipped per-side
+  // directly on the main map (setFloodCompare / setFloodCompareClip); this state
+  // only tracks the active years.
   const [swipe, setSwipe] = useState<SwipeCompareState | null>(null);
-  const [floodA, setFloodA] = useState<FloodFC>(() => emptyFC<FloodProps>());
-  const [floodB, setFloodB] = useState<FloodFC>(() => emptyFC<FloodProps>());
 
   const {
     layers,
@@ -96,27 +160,99 @@ const MorphismView = () => {
 
   const { width, active, onPointerDown, onKeyDown } = useChatResizer(direction);
   // Feed every analysis layer with (mock) demo data so toggling a layer renders
-  // real geometry on the map. During a flood swipe-compare the main map's flood
-  // layer switches to year B (year A is drawn in the clipped overlay).
+  // real geometry on the map. In compare mode the single flood layer is hidden
+  // (the per-year layers take over), so its data is left as the normal extent.
   // Memoised so the map's data-sync effect only fires when the data changes.
   const mapData = useMemo(
     () => ({
-      hospitals: hospitalsFC ?? MOCK_HOSPITALS,
+      // Buffer scenario feeds only the in-radius (risk) subset; otherwise full.
+      hospitals: pointOverride ?? hospitalsFC ?? MOCK_HOSPITALS,
       boundaries: MOCK_BOUNDARIES,
       buffer: MOCK_BUFFER,
-      flood: swipe ? floodB : MOCK_FLOOD,
+      // Live flood areas when the proxy succeeds; else the ported survey polygons.
+      flood: floodAreas ?? MOCK_FLOOD,
     }),
-    [swipe, floodB, hospitalsFC],
+    [hospitalsFC, pointOverride, floodAreas],
   );
+
+  // Popup body for a clicked hospital point — name + 24h status (i18n), mirrors
+  // the HTML popup. Read via a ref inside the map hook, so identity is free.
+  const hospitalPopupHtml = useCallback(
+    (name: string, h24: boolean) => {
+      const esc = (s: string) =>
+        s.replace(
+          /[&<>"]/g,
+          (c) =>
+            ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c,
+        );
+      const statusText = h24
+        ? t("morphism.popup.open24")
+        : t("morphism.popup.normalHours");
+      return `<b>${esc(name)}</b><br><span style="color:var(--color-text-success-onlight);font-size:12px">${esc(statusText)}</span>`;
+    },
+    [t],
+  );
+
   const {
     containerRef,
     map,
     zoom,
     flyTo,
     fitBounds,
+    fitBoundsAndWait,
+    commitFloodExtent,
+    setFloodOverview,
     setAggregate,
     setBoundaries,
-  } = useMorphismMap({ layers, data: mapData, theme: resolvedTheme });
+    setBufferCenters,
+    setFloodCompare,
+    setFloodCompareClip,
+    setDistricts,
+    setSubdistricts,
+    setCompareMode,
+  } = useMorphismMap({
+    layers,
+    data: mapData,
+    theme: resolvedTheme,
+    hospitalPopupHtml,
+  });
+
+  // Scope for the zoom-driven admin hierarchy: `mode` = "aggregate" (scenario
+  // supplies province counts) or "points" (derive counts from the shown points);
+  // null when no hospitals are on the map.
+  const [admScope, setAdmScope] = useState<{
+    mode: "aggregate" | "points";
+    names: string[];
+  } | null>(null);
+
+  // Displayed hospital coordinates (buffer subset when active, else full set) —
+  // counted inside each admin unit for the aggregation.
+  const hospitalPoints = useMemo<Position[]>(() => {
+    const src = pointOverride ?? hospitalsFC ?? MOCK_HOSPITALS;
+    return src.features.flatMap((f) =>
+      f.geometry.type === "Point" ? [f.geometry.coordinates as Position] : [],
+    );
+  }, [hospitalsFC, pointOverride]);
+
+  // Stable array identity across renders — `admScope?.names ?? []` would
+  // allocate a NEW array every render, which flows into the admin-hierarchy
+  // hook's `compute` deps and re-subscribes its debounced recompute effect on
+  // every render (→ infinite re-render loop). Memoised on admScope so it only
+  // changes when the scope actually changes.
+  const admNames = useMemo(() => admScope?.names ?? [], [admScope]);
+
+  const adm = useAdminHierarchy({
+    map,
+    active: admScope !== null,
+    mode: admScope?.mode ?? "aggregate",
+    provinceNames: admNames,
+    points: hospitalPoints,
+    boundaryColorVar: REGION_DEFAULT_TOKEN,
+    setAggregate,
+    setBoundaries,
+    setDistricts,
+    setSubdistricts,
+  });
 
   // Fetch the real province polygons once (client-side). On failure we keep a
   // flag so the UI shows an empty/error state instead of any fake geometry.
@@ -128,6 +264,7 @@ const MorphismView = () => {
         if (!cancelled) {
           boundariesRef.current = fc;
           setBoundariesError(false);
+          setBoundariesVersion((v) => v + 1); // trigger redraw of pending scenario
         }
       } catch {
         if (!cancelled) {
@@ -158,30 +295,6 @@ const MorphismView = () => {
     };
   }, []);
 
-  const {
-    containerRef: swipeContainerRef,
-    clip,
-    setClip,
-  } = useFloodSwipe({ active: swipe !== null, mainMap: map, data: floodA });
-
-  // Load both years' polygons whenever a swipe-compare is requested.
-  useEffect(() => {
-    if (!swipe) return;
-    let cancelled = false;
-    void (async () => {
-      const [a, b] = await Promise.all([
-        getFlood(swipe.yearA),
-        getFlood(swipe.yearB),
-      ]);
-      if (cancelled) return;
-      setFloodA(a);
-      setFloodB(b);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [swipe]);
-
   const showToast = useCallback((message: string) => {
     setToast(message);
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -195,56 +308,160 @@ const MorphismView = () => {
     [],
   );
 
-  // Apply the assistant's interpretation to the map (deterministic scenario).
-  const onScenario = useCallback(
-    (scenario: Scenario) => {
-      if (scenario.mode === "aggregate") {
-        // Province-summary view. Hospitals are marked "desired" so the zoom gate
-        // can reveal the points at zoom ≥ 11.8 (the scenario stays in
-        // aggregation mode logically; only layer visibility flips by zoom).
-        applyExact(["hospitals"]);
-        setAggregate(scenario.aggregate ?? []);
-        setAggregateState(scenario.aggregate ?? null);
-        // Draw the real polygons for the scenario's provinces (no fake geometry).
-        const all = boundariesRef.current;
-        const names = scenario.provinceNames ?? [];
-        let fitted = false;
+  // ONE controlled async function owns the flood scenario. The loaded
+  // FeatureCollection is the SINGLE SOURCE OF TRUTH — the chat can only report
+  // success when that FC actually has features; otherwise the load step is
+  // marked failed and the chat shows the empty/error message (never green).
+  // The hex LODs are built from that SAME geometry (never optional lat/long),
+  // so the overview can't be empty while the flood layer has data.
+  //
+  //   loading-data  → fetch the FC; current map/camera untouched.
+  //   updating-map  → commit the detail source + hex LODs + reveal flood layers.
+  //   moving-camera → fitBounds once (actual bounds) and WAIT for moveend.
+  //   complete      → the flood layer is visible + framed with real data.
+  //   empty / error → keep the previous valid view; step FAILS, no fake success.
+  const runFloodScenario = useCallback(
+    async (
+      meta: FloodScenarioMeta,
+      report?: ScenarioStepReporter,
+    ): Promise<ScenarioOutcome> => {
+      const emptyMsg = `ไม่พบข้อมูลพื้นที่น้ำท่วมวันที่ ${meta.dateLabel} ในระบบขณะนี้`;
+      const errorMsg = "ไม่สามารถโหลดข้อมูลพื้นที่น้ำท่วมได้ในขณะนี้";
 
-        // Resolve region colour(s) ONCE from the design tokens — this is the
-        // single source of truth shared by the polygons AND the legend swatch.
-        const colorCache = new Map<string, string>();
-        const colorFor = (region: string | null) => {
-          const tokenVar =
-            (region && REGION_TOKEN_VAR[region]) || REGION_DEFAULT_TOKEN;
-          let c = colorCache.get(tokenVar);
-          if (c === undefined) {
-            c = readCssColor(tokenVar);
-            colorCache.set(tokenVar, c);
-          }
-          return c;
-        };
-        const activeRegions = [
-          ...new Set(
-            names
-              .map((pn) => provinceRegion(pn))
-              .filter((r): r is string => r !== null),
-          ),
-        ];
-        // Single region → its colour; multiple (nationwide) → default boundary.
-        setBoundaryColor(
-          activeRegions.length === 1 ? colorFor(activeRegions[0]) : colorFor(null),
-        );
+      // Empty resolution (unknown date/month) → no dataset for this date.
+      if (!meta.hasData) {
+        setFloodStatus("empty");
+        report?.fail(1);
+        return { ok: false, message: emptyMsg };
+      }
+      const controller = new AbortController();
+      floodAbortRef.current = controller;
+      const requestId = ++floodRequestIdRef.current;
+      const stale = () =>
+        controller.signal.aborted || requestId !== floodRequestIdRef.current;
+      const since = (t0: number) => Math.round(performance.now() - t0);
 
-        if (all && names.length) {
-          type AdmFeature = ProvinceBoundaryFC["features"][number];
-          const features = all.features.flatMap<AdmFeature>((f) => {
-            const n = f.properties.name;
-            const matched = names.find(
-              (pn) => n === pn || n.includes(pn) || pn.includes(n),
-            );
-            if (!matched) return [];
-            const region = provinceRegion(matched);
-            const feat: AdmFeature = {
+      // Step 0 · resolve_date — already parsed during query resolution (instant).
+      report?.done(0, since(performance.now()));
+
+      // Clear a stale empty/error badge WITHOUT clearing the existing layer.
+      setFloodStatus("loading-data");
+      try {
+        // Step 1 · load — fetch the ONE complete FeatureCollection (server
+        // paginates in parallel + caches; client caches by date + dedups).
+        const tLoad = performance.now();
+        const resp = await getFloodAreas(meta.date, controller.signal);
+        if (stale()) return { ok: true };
+
+        // TRUTHFUL success gate: no features → the step FAILS (not green) and the
+        // chat shows the empty message; the previous valid map is kept.
+        const bb = resp.features.length ? bboxOf(resp) : null;
+        if (!resp.features.length || !bb) {
+          report?.fail(1, since(tLoad));
+          setFloodStatus("empty");
+          return { ok: false, message: emptyMsg };
+        }
+        report?.done(1, since(tLoad));
+
+        // Hex LODs from the ACTUAL loaded geometry (single source of truth).
+        const hex = buildFloodHexLevels(resp);
+
+        // Step 2 · add_overview_layer — atomic commit: detail source + hex LODs +
+        // reveal the flood layer, all from the same FC.
+        const tAdd = performance.now();
+        setFloodStatus("updating-map");
+        setFloodAreas(resp);
+        setFloodPartial(Boolean(resp.partial));
+        applyExact(["flood"]);
+        commitFloodExtent(resp);
+        setFloodOverview(hex);
+        report?.done(2, since(tAdd));
+
+        // Step 3 · fit_bounds — one fitBounds to the ACTUAL flood bounds, WAIT
+        // for moveend. (Never focuses Bangkok.)
+        setFloodStatus("moving-camera");
+        const tCam = performance.now();
+        const key = `${meta.scenarioId}:${bb.join(",")}`;
+        if (floodBoundsRef.current !== key) {
+          floodBoundsRef.current = key;
+          await fitBoundsAndWait({
+            sw: [bb[0], bb[1]],
+            ne: [bb[2], bb[3]],
+            duration: FLOOD_FIT_DURATION,
+          });
+        }
+        if (stale()) return { ok: true };
+        report?.done(3, since(tCam));
+
+        // ── complete: the flood layer is visible + framed with real data. ───
+        setFloodStatus("complete");
+        showToast(t("morphism.toast.applied"));
+        return { ok: true };
+      } catch {
+        if (stale()) return { ok: true };
+        report?.fail(1);
+        setFloodStatus("error"); // keep previous valid map state
+        return { ok: false, message: errorMsg };
+      }
+    },
+    [
+      applyExact,
+      commitFloodExtent,
+      setFloodOverview,
+      fitBoundsAndWait,
+      showToast,
+      t,
+    ],
+  );
+
+  const { clip, setClip } = useFloodSwipe({ active: swipe !== null });
+
+  // Drive the real-time per-year clip on the map from the divider position.
+  useEffect(() => {
+    if (swipe) setFloodCompareClip(clip);
+  }, [clip, swipe, setFloodCompareClip]);
+
+  // Build + draw the region-coloured province polygons for an aggregate scenario
+  // from the loaded province GeoJSON. Draw-only (no camera) → returns the polygon
+  // bbox (or null). Camera framing is decided by the caller so region-comparison
+  // can always frame BOTH regions regardless of which polygons matched.
+  const drawAggregateBoundaries = useCallback(
+    (scenario: Scenario): BBox | null => {
+      const all = boundariesRef.current;
+      const names = scenario.provinceNames ?? [];
+      const colorCache = new Map<string, string>();
+      const colorFor = (region: string | null) => {
+        const tokenVar =
+          (region && REGION_TOKEN_VAR[region]) || REGION_DEFAULT_TOKEN;
+        let c = colorCache.get(tokenVar);
+        if (c === undefined) {
+          c = readCssColor(tokenVar);
+          colorCache.set(tokenVar, c);
+        }
+        return c;
+      };
+      const activeRegions = [
+        ...new Set(
+          names
+            .map((pn) => provinceRegion(pn))
+            .filter((r): r is string => r !== null),
+        ),
+      ];
+      setBoundaryColor(
+        activeRegions.length === 1 ? colorFor(activeRegions[0]) : colorFor(null),
+      );
+
+      if (all && names.length) {
+        type AdmFeature = ProvinceBoundaryFC["features"][number];
+        const features = all.features.flatMap<AdmFeature>((f) => {
+          const n = f.properties.name;
+          const matched = names.find(
+            (pn) => n === pn || n.includes(pn) || pn.includes(n),
+          );
+          if (!matched) return [];
+          const region = provinceRegion(matched);
+          return [
+            {
               type: "Feature",
               geometry: f.geometry,
               properties: {
@@ -252,48 +469,307 @@ const MorphismView = () => {
                 region: region ?? undefined,
                 color: colorFor(region),
               },
-            };
-            return [feat];
-          });
-          const subset: ProvinceBoundaryFC = {
-            type: "FeatureCollection",
-            features,
-          };
-          setBoundaries(subset);
-          // Fit to the REAL polygon extent so the overview zoom matches the HTML
-          // (whole region/province), not a tight centroid box.
-          const bbox = features.length ? bboxOf(subset) : null;
-          if (bbox) {
-            fitBounds({
-              sw: [bbox[0], bbox[1]],
-              ne: [bbox[2], bbox[3]],
-              duration: scenario.bounds?.duration ?? 1200,
-            });
-            fitted = true;
-          }
-        } else {
-          setBoundaries(null); // fetch failed/empty → no polygons (badges remain)
-        }
-        // Fallback camera (centroid bounds) when polygons aren't available.
-        if (!fitted && scenario.bounds) fitBounds(scenario.bounds);
-      } else {
-        // Point / analysis view: clear aggregation + polygons, show exactly this
-        // scenario's layers, fly to its camera.
+            },
+          ];
+        });
+        const subset: ProvinceBoundaryFC = { type: "FeatureCollection", features };
+        setBoundaries(subset);
+        return features.length ? bboxOf(subset) : null;
+      }
+      setBoundaries(null);
+      return null;
+    },
+    [setBoundaries, setBoundaryColor],
+  );
+
+  // Redraw the last aggregate scenario's boundaries once the province polygons
+  // arrive (they fetch async; a query can resolve before they load).
+  useEffect(() => {
+    const s = pendingAggScenarioRef.current;
+    if (s && boundariesRef.current) drawAggregateBoundaries(s);
+  }, [boundariesVersion, drawAggregateBoundaries]);
+
+  // Apply the assistant's interpretation to the map (deterministic scenario).
+  // Returns a Promise for flood scenarios that resolves ONLY after the map has
+  // committed the data and finished moving — the assistant awaits it before
+  // marking the chat complete. Non-flood scenarios resolve synchronously.
+  const onScenario = useCallback(
+    (
+      scenario: Scenario,
+      report?: ScenarioStepReporter,
+    ): void | Promise<void | ScenarioOutcome> => {
+      // Unknown/unmatched query: keep the current map result untouched — no
+      // layers, no camera move, no toast. (The chat shows the fallback message.)
+      if (scenario.mode === "unknown") return;
+
+      // Invalidate any in-flight flood run (aborts its fetch + supersedes its id)
+      // so a superseded scenario can never commit late.
+      floodAbortRef.current?.abort();
+      floodRequestIdRef.current += 1;
+
+      // Date-based flood scenario: render the real MultiPolygon extent for a
+      // single observation date. Only the flood layer is shown (hospital points
+      // stay hidden). The whole fetch → commit → camera flow is owned by
+      // runFloodScenario, whose returned promise the assistant awaits.
+      if (scenario.flood) {
+        const meta = scenario.flood;
+        setPointOverride(null);
+        setBufferCenters(null);
         setAggregate(null);
         setAggregateState(null);
         setBoundaries(null);
         setBoundaryColor(null);
+        setCompareMode(false);
+        setCompareLegend(null);
+        setAdmScope(null);
+        pendingAggScenarioRef.current = null;
+        setSwipe(null);
+        setFloodCompare(null, null);
+        setTimeActive(false);
+        setTimeLabel(null);
+        // Hide every overlay while loading — crucially this prevents the MOCK
+        // flood extent from flashing at Bangkok. The flood layer is revealed
+        // atomically only once the real dataset is committed. Camera NOT moved
+        // here; runFloodScenario moves it after the commit and awaits moveend.
+        applyExact([]);
+        setFloodMeta(meta);
+        // No toast here — "Map updated" is shown by runFloodScenario only after
+        // the camera has finished moving (status "complete"). The reporter feeds
+        // real per-step durations back to the chat.
+        return runFloodScenario(meta, report);
+      }
+      // Any non-flood scenario leaves date-based flood mode: release the flood
+      // source (other scenarios use MOCK_FLOOD), deactivate the low-zoom overview
+      // (so mock flood never shows stale overview cells) and reset the machine.
+      setFloodMeta(null);
+      setFloodAreas(null);
+      setFloodPartial(false);
+      setFloodOverview(null);
+      setFloodStatus("idle");
+      floodBoundsRef.current = null;
+
+      if (scenario.mode === "aggregate") {
+        // Province-summary view. Hospitals are marked "desired" so the zoom gate
+        // can reveal the points at zoom ≥ 11.8 (the scenario stays in
+        // aggregation mode logically; only layer visibility flips by zoom).
+        const isCmp = Boolean(scenario.regionCompare);
+        setPointOverride(null);
+        setBufferCenters(null);
+        // Region-compare hides hospital points entirely (region boundaries +
+        // per-region counts only); normal aggregate reveals points at z≥11.
+        applyExact(isCmp ? [] : ["hospitals"]);
+        setCompareMode(isCmp);
+        setCompareLegend(isCmp ? COMPARE_LEGEND : null);
+        setAggregate(scenario.aggregate ?? []);
+        setAggregateState(scenario.aggregate ?? null);
+        // Region-compare draws region boundaries only (no ADM2/ADM3 drill-down).
+        setAdmScope(
+          isCmp
+            ? null
+            : { mode: "aggregate", names: scenario.provinceNames ?? [] },
+        );
+        // Draw region-coloured province polygons. Remember the scenario so the
+        // redraw effect can replay it if the province GeoJSON loads late.
+        pendingAggScenarioRef.current = scenario;
+        const bbox = drawAggregateBoundaries(scenario);
+        // Camera: region-comparison ALWAYS frames BOTH regions from the fixed
+        // combined bounds (never the possibly-partial polygon subset, never one
+        // region). Normal aggregate fits the drawn polygon extent.
+        if (isCmp) {
+          if (scenario.bounds) fitBounds(scenario.bounds);
+        } else if (bbox) {
+          fitBounds({
+            sw: [bbox[0], bbox[1]],
+            ne: [bbox[2], bbox[3]],
+            duration: scenario.bounds?.duration ?? 1200,
+          });
+        } else if (scenario.bounds) {
+          fitBounds(scenario.bounds);
+        }
+        // [region-comparison] TEMP — remove after verifying.
+        if (isCmp) {
+          console.log("[region-comparison]", {
+            scenarioType: "region-comparison",
+            comparedRegions: scenario.aggregate?.map((a) => a.name),
+            regionLabels: scenario.aggregate?.map((a) => a.count),
+            polygonBbox: bbox,
+            bounds: scenario.bounds,
+          });
+        }
+      } else {
+        // Point / analysis view. A hospital query drives the SAME zoom-band
+        // aggregation as statistics, but SCOPED to the extracted province: points
+        // at z≥11, district counts 8.5–11, province count 6–8.5, summary <6.
+        setAggregate(null);
+        setAggregateState(null);
+        setBoundaries(null);
+        setBoundaryColor(null);
+        setCompareMode(false);
+        setCompareLegend(null);
+        pendingAggScenarioRef.current = null; // leaving aggregate/compare
         applyExact(scenario.layers, true);
-        if (scenario.camera) flyTo(scenario.camera);
+        // Scope the zoom-band hierarchy to the query's province (points mode
+        // derives counts from the filtered points); no province = data-driven.
+        setAdmScope(
+          scenario.layers.includes("hospitals")
+            ? {
+                mode: "points",
+                names: scenario.hospitalScope?.province
+                  ? [scenario.hospitalScope.province]
+                  : [],
+              }
+            : null,
+        );
+
+        if (scenario.id === "buffer5km") {
+          // Spatial query: keep only hospitals within the 5 km buffer (red risk
+          // points); draw the buffer centre; fit the camera to the buffer.
+          const source = hospitalsFC ?? MOCK_HOSPITALS;
+          const inBuffer = (p: Position) =>
+            FLOOD_ANALYSIS_CENTERS.some(
+              (c) => distanceKm(p, c) <= FLOOD_ANALYSIS_RADIUS_KM,
+            );
+          const features = source.features
+            .filter(
+              (f) =>
+                f.geometry.type === "Point" &&
+                inBuffer(f.geometry.coordinates as Position),
+            )
+            .map((f) => ({
+              ...f,
+              properties: { ...f.properties, risk: true },
+            }));
+          setPointOverride({ type: "FeatureCollection", features });
+          setBufferCenters(MOCK_BUFFER_CENTERS);
+          const bb = bboxOf(MOCK_BUFFER);
+          if (bb) {
+            fitBounds({
+              sw: [bb[0], bb[1]],
+              ne: [bb[2], bb[3]],
+              duration: scenario.camera?.duration ?? 1100,
+            });
+          } else if (scenario.camera) {
+            flyTo(scenario.camera);
+          }
+        } else if (scenario.hospitalScope) {
+          // POI search scoped to a province (+ 24h): filter province → 24h, then
+          // render the filtered points and fit the camera to them. NO aggregate.
+          const scope = scenario.hospitalScope;
+          const source = hospitalsFC ?? MOCK_HOSPITALS;
+          // Canonical EXACT province match (no substring — that leaks blanks).
+          const canonScope = normalizeProvinceName(scope.province);
+          const inProvince = (pv: string | undefined) => {
+            if (!scope.province) return true;
+            const canon = normalizeProvinceName(pv);
+            return canon !== "" && canon === canonScope;
+          };
+          // h24 only bites when the dataset actually carries the flag.
+          const datasetHasH24 = source.features.some((f) => f.properties.h24);
+          const afterProvince = source.features.filter((f) =>
+            inProvince(f.properties.province),
+          );
+          const features = afterProvince.filter(
+            (f) => !(scope.h24 && datasetHasH24 && !f.properties.h24),
+          );
+          const subset: HospitalFC = { type: "FeatureCollection", features };
+          setPointOverride(subset);
+          setBufferCenters(null);
+          // The province boundary + counts are drawn by the zoom-band hierarchy
+          // (scoped to this province); the view only frames the camera.
+
+          // Fit the camera to the found hospitals (frames the province). Points
+          // render only at z≥11 — below that the band shows aggregation.
+          const all = boundariesRef.current;
+          const bb = features.length
+            ? bboxOf(subset)
+            : all && scope.province
+              ? bboxOf({
+                  type: "FeatureCollection",
+                  features: all.features.filter(
+                    (f) => normalizeProvinceName(f.properties.name) === canonScope,
+                  ),
+                })
+              : null;
+          if (bb) {
+            fitBounds({
+              sw: [bb[0], bb[1]],
+              ne: [bb[2], bb[3]],
+              duration: scenario.camera?.duration ?? 1100,
+            });
+          } else if (scenario.camera) {
+            flyTo(scenario.camera);
+          }
+
+          // [morphism-query] TEMP — verify province scope (remove after fixing).
+          console.log("[morphism-query]", {
+            scenarioId: scenario.id,
+            renderMode: "points",
+            intent: "poi-search",
+            resolvedProvince: scope.province ?? null,
+            totalHospitalsBeforeFilter: source.features.length,
+            afterProvinceFilter: afterProvince.length,
+            afterHoursFilter: features.length,
+            renderedFeatureCount: features.length,
+            sampleRenderedFeatures: features
+              .slice(0, 5)
+              .map((f) => f.properties),
+          });
+        } else {
+          setPointOverride(null);
+          setBufferCenters(null);
+          if (scenario.camera) flyTo(scenario.camera);
+        }
       }
       // Time filter pill: on with the scenario's label, else cleared.
       setTimeActive(Boolean(scenario.timeActive));
       setTimeLabel(scenario.timeActive ? scenario.timeLabel ?? null : null);
       // Enter/leave swipe-compare; a non-swipe query closes any open compare.
       setSwipe(scenario.swipe ?? null);
+      // In compare mode draw BOTH years as their own colour-coded layers on the
+      // main map (year A = blue, year B = purple); clear otherwise.
+      if (scenario.swipe) {
+        setFloodCompare(
+          floodForYear(scenario.swipe.yearA),
+          floodForYear(scenario.swipe.yearB),
+        );
+      } else {
+        setFloodCompare(null, null);
+      }
+      // TEMP debug — verify each side gets distinct, non-empty geometry.
+      if (scenario.swipe) {
+        const a = floodForYear(scenario.swipe.yearA);
+        const b = floodForYear(scenario.swipe.yearB);
+        console.log("[flood-compare]", {
+          yearA: scenario.swipe.yearA,
+          yearB: scenario.swipe.yearB,
+          leftFeatures: a.features.length,
+          rightFeatures: b.features.length,
+        });
+      }
+      // [adm-debug] TEMP — remove after verifying zoom bands / aggregation.
+      console.log("[adm-debug] scenario", {
+        id: scenario.id,
+        mode: scenario.mode,
+        layers: scenario.layers,
+      });
       showToast(t("morphism.toast.applied"));
     },
-    [applyExact, setAggregate, setBoundaries, fitBounds, flyTo, showToast, t],
+    [
+      applyExact,
+      setAggregate,
+      setBoundaries,
+      setBufferCenters,
+      setFloodCompare,
+      setCompareMode,
+      drawAggregateBoundaries,
+      fitBounds,
+      flyTo,
+      hospitalsFC,
+      runFloodScenario,
+      setFloodOverview,
+      showToast,
+      t,
+    ],
   );
 
   const { messages, ask, pending } = useAiAssistant({
@@ -422,16 +898,66 @@ const MorphismView = () => {
             aggregate={aggregate}
             boundaryColor={boundaryColor}
             boundariesError={boundariesError}
+            swipe={swipe}
+            compareRegions={compareLegend}
+            floodDateLabel={
+              floodStatus === "complete" ? floodMeta?.dateLabel ?? null : null
+            }
+            floodPartial={floodPartial}
           />
+
+        {/* Lazy ADM2/ADM3 status — loading / error(fallback) / empty */}
+        {(adm.loading || adm.error || adm.empty) && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded-full border px-3 py-1.5 text-xs font-medium shadow-md",
+              adm.error
+                ? "border-border-error-default bg-background-error-light text-text-error-onlight"
+                : "border-border-default-default bg-background-default-default text-text-default-onlight",
+            )}
+          >
+            {adm.loading
+              ? t("morphism.admStatus.loading")
+              : adm.error
+                ? t("morphism.admStatus.error")
+                : t("morphism.admStatus.empty")}
+          </div>
+        )}
+
+        {/* Flood scenario TERMINAL status only — empty / error. Processing state
+            (loading / committing / camera) lives solely in the sidebar tool
+            steps; there is deliberately no map-level "loading" badge. */}
+        {(floodStatus === "empty" || floodStatus === "error") && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded-full border px-3 py-1.5 text-xs font-medium shadow-md",
+              floodStatus === "error"
+                ? "border-border-error-default bg-background-error-light text-text-error-onlight"
+                : "border-border-default-default bg-background-default-default text-text-default-onlight",
+            )}
+          >
+            {floodStatus === "error"
+              ? t("morphism.flood.error")
+              : floodMeta?.matchMode === "month"
+                ? t("morphism.flood.emptyMonth", { month: floodMeta.dateLabel })
+                : t("morphism.flood.emptyDate", { date: floodMeta?.dateLabel ?? "" })}
+          </div>
+        )}
 
         <SwipeCompare
           active={swipe !== null}
           yearA={swipe?.yearA ?? 0}
           yearB={swipe?.yearB ?? 0}
-          containerRef={swipeContainerRef}
           clip={clip}
           onClipChange={setClip}
-          onClose={() => setSwipe(null)}
+          onClose={() => {
+            setSwipe(null);
+            setFloodCompare(null, null);
+          }}
         />
 
         <Toast message={toast} />

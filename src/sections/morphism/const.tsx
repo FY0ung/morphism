@@ -10,9 +10,18 @@ import type {
   Position,
   FeatureCollection,
   HospitalFC,
-  FloodFC,
   BoundaryFC,
 } from "@/types";
+import type { FloodScenarioMeta } from "@/types";
+import { FLOOD_SURVEY } from "./flood-survey";
+import { FLOOD_COMPARE_SIDES } from "@/configs/flood-compare";
+import {
+  resolveFloodDate,
+  formatThaiDate,
+  formatThaiMonth,
+  toBuddhistYear,
+  type FloodDateResolution,
+} from "@/lib/flood-date";
 
 /** Suggestion chips — `labelKey` is also the message sent when tapped. */
 export const SUGGESTION_CHIPS = [
@@ -114,45 +123,130 @@ export const MOCK_HOSPITALS: HospitalFC = {
 /** Deterministic counts derived from the mock (so chat text matches the dots). */
 const countWhere = (pred: (r: HospitalRow) => boolean) =>
   HOSPITAL_ROWS.filter(pred).length;
-const BKK_H24 = countWhere((r) => r[4] === "กรุงเทพมหานคร" && r[3]);
 // Hospitals near the flood polygon / buffer (central Bangkok) — risk set.
 const FLOOD_RISK = countWhere(
   (r) => r[4] === "กรุงเทพมหานคร" && r[1] <= 100.55,
 );
 
-export const MOCK_FLOOD: FloodFC = {
-  type: "FeatureCollection",
-  features: [
-    {
-      type: "Feature",
-      geometry: {
-        type: "Polygon",
-        coordinates: [
-          [
-            [100.485, 13.700],
-            [100.535, 13.694],
-            [100.548, 13.732],
-            [100.503, 13.748],
-            [100.478, 13.722],
-            [100.485, 13.700],
-          ],
-        ],
-      },
-      properties: { year: 2569, severity: 2, areaKm2: 18.4 },
-    },
-  ],
-};
+/* Flood analysis — deterministic geometry ported verbatim from the HTML
+ * reference: the real FLOOD_SURVEY polygons, and TWO 5 km buffers around the
+ * exact BUFFER_CENTERS_RAW centres. Hospitals are filtered (in the view) to
+ * within 5 km of EITHER centre so only "at-risk" ones are shown. */
+export const FLOOD_ANALYSIS_CENTERS: Position[] = [
+  [100.481, 13.784],
+  [100.486, 13.745],
+];
+export const FLOOD_ANALYSIS_RADIUS_KM = 5;
 
+// Real flood-survey polygons (blue). Imported from the ported data module.
+export const MOCK_FLOOD: FeatureCollection = FLOOD_SURVEY;
+
+/** One 5 km analysis buffer (green dashed circle) per centre. */
 export const MOCK_BUFFER: FeatureCollection = {
   type: "FeatureCollection",
-  features: [
-    {
-      type: "Feature",
-      geometry: { type: "Polygon", coordinates: circleRing([100.5835, 13.7475], 1.8) },
-      properties: { radiusKm: 1.8, around: "รพ. กรุงเทพ" },
-    },
-  ],
+  features: FLOOD_ANALYSIS_CENTERS.map((c) => ({
+    type: "Feature",
+    geometry: { type: "Polygon", coordinates: circleRing(c, FLOOD_ANALYSIS_RADIUS_KM) },
+    properties: { radiusKm: FLOOD_ANALYSIS_RADIUS_KM },
+  })),
 };
+
+/** Buffer centre markers — one point per centre. */
+export const MOCK_BUFFER_CENTERS: FeatureCollection = {
+  type: "FeatureCollection",
+  features: FLOOD_ANALYSIS_CENTERS.map((c) => ({
+    type: "Feature",
+    geometry: { type: "Point", coordinates: c },
+    properties: { label: "ศูนย์กลางรัศมี" },
+  })),
+};
+
+/* Deterministic per-year flood extent — ported from the HTML: the survey
+ * polygons scaled about their centroid by a per-year severity factor. */
+function floodSeverity(year: number): number {
+  const table: Record<number, number> = {
+    2554: 1.9, 2564: 1.35, 2565: 1.15, 2566: 0.62,
+    2567: 0.8, 2568: 0.95, 2569: 1.0, 2570: 1.1,
+  };
+  return table[year] ?? 0.6 + (Math.abs(year) % 7) * 0.12;
+}
+
+function scaleFC(fc: FeatureCollection, k: number): FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: fc.features.map((f) => {
+      const g = f.geometry;
+      if (g.type !== "Polygon") return f;
+      const ring = g.coordinates[0];
+      let cx = 0;
+      let cy = 0;
+      ring.forEach(([x, y]) => {
+        cx += x;
+        cy += y;
+      });
+      cx /= ring.length;
+      cy /= ring.length;
+      return {
+        type: "Feature" as const,
+        properties: f.properties,
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: g.coordinates.map((r) =>
+            r.map(([x, y]) => [cx + (x - cx) * k, cy + (y - cy) * k] as Position),
+          ),
+        },
+      };
+    }),
+  };
+}
+
+/** Flood extent for a given B.E. year (deterministic, non-empty). */
+export function floodForYear(year: number): FeatureCollection {
+  return scaleFC(FLOOD_SURVEY, floodSeverity(year));
+}
+
+/**
+ * Planar area (km²) of every Polygon in a FeatureCollection — shoelace on
+ * lng/lat with a cos(lat) correction for longitude compression. Good enough for
+ * the small metro extents here and deterministic (matches the HTML reference).
+ */
+function polyAreaKm2(fc: FeatureCollection): number {
+  let total = 0;
+  for (const f of fc.features) {
+    const g = f.geometry;
+    if (g.type !== "Polygon") continue;
+    const ring = g.coordinates[0];
+    if (!ring || ring.length < 3) continue;
+    const latMean =
+      ((ring.reduce((s, [, y]) => s + y, 0) / ring.length) * Math.PI) / 180;
+    let sum = 0;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      sum += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+    }
+    const areaDeg = Math.abs(sum) / 2;
+    total += areaDeg * 110.574 * (111.32 * Math.cos(latMean));
+  }
+  return total;
+}
+
+/** Deterministic per-year flood impact stats (area, ไร่, districts, population). */
+export function floodStatsForYear(year: number): {
+  fc: FeatureCollection;
+  areaKm2: number;
+  rai: number;
+  districts: number;
+  pop: number;
+} {
+  const fc = floodForYear(year);
+  const areaKm2 = polyAreaKm2(fc);
+  return {
+    fc,
+    areaKm2: Math.round(areaKm2),
+    rai: Math.round(areaKm2 * 625), // 1 km² = 625 ไร่
+    districts: Math.max(1, Math.round(areaKm2 / 95)),
+    pop: Math.round(areaKm2 * 820),
+  };
+}
 
 export const MOCK_BOUNDARIES: BoundaryFC = {
   type: "FeatureCollection",
@@ -263,6 +357,27 @@ export const REGION_TOKEN_VAR: Record<string, string> = {
 /** Default token when a province's region is unknown. */
 export const REGION_DEFAULT_TOKEN = "--color-border-primary-default";
 
+// Region → Tailwind utility classes for the SAME tokens as REGION_TOKEN_VAR
+// (literal strings so Tailwind emits them). Used by the donut swatch + legend so
+// map, chart and legend colours stay identical. เหนือ = tower/teal (success),
+// อีสาน = lilac/purple (secondary).
+export const REGION_FILL: Record<string, string> = {
+  กลาง: "fill-background-primary-default",
+  เหนือ: "fill-background-success-default",
+  อีสาน: "fill-background-secondary-default",
+  ใต้: "fill-background-error-default",
+  ตะวันออก: "fill-background-info-default",
+  ตะวันตก: "fill-background-warning-default",
+};
+export const REGION_BG: Record<string, string> = {
+  กลาง: "bg-background-primary-default",
+  เหนือ: "bg-background-success-default",
+  อีสาน: "bg-background-secondary-default",
+  ใต้: "bg-background-error-default",
+  ตะวันออก: "bg-background-info-default",
+  ตะวันตก: "bg-background-warning-default",
+};
+
 /** Which region a province belongs to (null if not found). */
 export function provinceRegion(name: string): string | null {
   for (const region of Object.keys(REGIONS)) {
@@ -285,6 +400,13 @@ function regionProvinces(region: string): ProvinceCount[] {
 }
 function regionTotal(region: string): number {
   return regionProvinces(region).reduce((s, p) => s + p.count, 0);
+}
+/** Mean centroid of a region's provinces (for the region count label). */
+function regionCentroid(region: string): [number, number] {
+  const ps = regionProvinces(region);
+  const cx = ps.reduce((s, p) => s + p.center[0], 0) / ps.length;
+  const cy = ps.reduce((s, p) => s + p.center[1], 0) / ps.length;
+  return [cx, cy];
 }
 
 /** Bounds enclosing a set of points (+ margin) for fitBounds. */
@@ -330,21 +452,41 @@ const CATALOG_STEP: ScenarioStep = {
   wait: 430,
 };
 
-/** Bangkok 24-hour hospitals. */
-const scnBkk24 = (): Scenario => ({
-  id: "bkk24",
-  mode: "points",
-  layers: ["hospitals"],
-  camera: CAM.bkk,
-  interim: "กำลังหาโรงพยาบาลที่เปิด 24 ชั่วโมงในกรุงเทพ…",
-  steps: [
-    { label: "get_view() → กรุงเทพอยู่ในจอ", wait: 380 },
-    CATALOG_STEP,
-    { label: "add_layer('health_facilities')", wait: 380 },
-    { label: "attribute_filter(hours='24/7')", wait: 430 },
-  ],
-  result: `พบโรงพยาบาล 24 ชั่วโมง ${BKK_H24} แห่ง — แสดงบนแผนที่แล้ว`,
-});
+/**
+ * Hospitals scoped to a province (point mode) — the extracted location is the
+ * single source of truth for the camera, the point filter AND the ADM
+ * aggregation. `province === null` = no location in the prompt (keep the current
+ * map extent, show the full set). NEVER hardcodes Bangkok.
+ */
+const scnCityHospitals = (
+  province: string | null,
+  h24: boolean,
+): Scenario => {
+  const c = province ? PROV_CENTROID[province] : undefined;
+  // Bangkok is dense → a slightly tighter zoom; other provinces a touch wider.
+  const zoom = province === "กรุงเทพมหานคร" ? 11.8 : 11.2;
+  const where = province ?? "พื้นที่ที่แสดงอยู่";
+  const label24 = h24 ? "ที่เปิด 24 ชั่วโมง" : "";
+  return {
+    id: province ? `hosp-${province}` : "hosp-scoped",
+    mode: "points",
+    layers: ["hospitals"],
+    // Camera derives from the SELECTED province's centroid (not Bangkok); when no
+    // province is given we omit it so the view keeps the current extent.
+    camera: c ? { center: [c[0], c[1]], zoom, duration: 1100 } : undefined,
+    hospitalScope: { province: province ?? undefined, h24 },
+    interim: `กำลังหาโรงพยาบาล${label24}ใน${where}…`,
+    steps: [
+      { label: `resolve_location() → ${province ?? "ไม่ระบุ (ใช้พื้นที่ปัจจุบัน)"}`, wait: 380 },
+      CATALOG_STEP,
+      { label: `filter(province='${province ?? "*"}')`, wait: 380 },
+      ...(h24
+        ? [{ label: "attribute_filter(hours='24/7')", wait: 430 }]
+        : []),
+    ],
+    result: `แสดงโรงพยาบาล${label24}${province ? `ใน${province}` : ""}บนแผนที่แล้ว`,
+  };
+};
 
 /** Flood during the last Songkran period. */
 const scnSongkran = (): Scenario => ({
@@ -421,40 +563,76 @@ const scnRegion = (region: string): Scenario => {
       { label: `group_by(province) ใน${label}`, wait: 480 },
     ],
     result: `${label}มีโรงพยาบาลรัฐรวม ${total.toLocaleString()} แห่ง ใน ${provinces.length} จังหวัด — ตัวเลขรวมแสดงในแต่ละจังหวัดบนแผนที่`,
-    chart: {
-      kind: "bar",
-      title: `จำนวนโรงพยาบาลรัฐต่อจังหวัด — ${label}`,
-      rows: [...provinces]
-        .sort((a, b) => b.count - a.count)
-        .map((p) => ({ label: p.name, value: p.count })),
-      exportName: `hospitals-by-province-${region}`,
-    },
+    charts: [
+      {
+        kind: "bar",
+        title: `จำนวนโรงพยาบาลรัฐต่อจังหวัด — ${label}`,
+        rows: [...provinces]
+          .sort((a, b) => b.count - a.count)
+          .map((p) => ({ label: p.name, value: p.count })),
+        exportName: `hospitals-by-province-${region}`,
+      },
+    ],
   };
 };
 
 /** Compare regions (North vs Northeast) — donut/bar of counts. */
-const scnCompareRegions = (): Scenario => ({
-  id: "cmp",
-  mode: "points",
-  layers: ["boundaries"],
-  camera: CAM.compare,
-  interim: "กำลังเปรียบเทียบโรงพยาบาลรัฐ: ภาคเหนือ · ภาคอีสาน…",
-  steps: [
-    { label: "resolve_entities() → 2 กลุ่ม", wait: 360 },
-    { ...CATALOG_STEP, wait: 420 },
-    { label: "group_by(region) → จัดกลุ่มแยกรายภาค (คงสีประจำภาค)", wait: 460 },
-  ],
-  result: "เปรียบเทียบจำนวนโรงพยาบาลรัฐรายภาคแล้ว — ดูกราฟด้านล่างครับ",
-  chart: {
-    kind: "bar",
-    title: "เปรียบเทียบจำนวนโรงพยาบาลรัฐ — ภาคเหนือ vs ภาคอีสาน",
-    rows: [
-      { label: "ภาคอีสาน", value: 938 },
-      { label: "ภาคเหนือ", value: 642 },
+/** Regions compared in the fixed "North vs Northeast" scenario. */
+const COMPARE_REGIONS = ["เหนือ", "อีสาน"];
+
+/** Legend rows for the region-compare (label + matching region colour class). */
+export const COMPARE_LEGEND = COMPARE_REGIONS.map((rg) => ({
+  label: REGION_LABEL[rg],
+  swatch: REGION_BG[rg],
+}));
+
+/**
+ * Compare hospitals across regions (North vs Northeast) — ported from the HTML
+ * CMP mode: region-coloured boundaries + ONE count label per region, hospital
+ * points hidden, donut with the region colours.
+ */
+const scnCompareRegions = (): Scenario => {
+  const provinceNames = COMPARE_REGIONS.flatMap((rg) => REGIONS[rg] ?? []);
+  const provincePts = provinceNames
+    .map(provinceCount)
+    .filter((p): p is ProvinceCount => p !== null);
+  return {
+    id: "cmp",
+    mode: "aggregate",
+    regionCompare: true,
+    layers: ["boundaries"],
+    // One aggregate entry per region → one count label at the region centroid.
+    aggregate: COMPARE_REGIONS.map((rg) => ({
+      name: REGION_LABEL[rg],
+      center: regionCentroid(rg),
+      count: regionTotal(rg),
+    })),
+    provinceNames,
+    // Frame BOTH regions (like the HTML fitBounds over both regions' extent).
+    bounds: boundsOf(provincePts, 0.9, 1100),
+    interim: "กำลังเปรียบเทียบโรงพยาบาลรัฐ: ภาคเหนือ · ภาคอีสาน…",
+    steps: [
+      { label: `resolve_entities() → ${COMPARE_REGIONS.length} กลุ่ม`, wait: 360 },
+      { ...CATALOG_STEP, wait: 420 },
+      { label: "group_by(region) → จัดกลุ่มแยกรายภาค (คงสีประจำภาค)", wait: 460 },
     ],
-    exportName: "region-compare",
-  },
-});
+    result:
+      "เปรียบเทียบจำนวนโรงพยาบาลรัฐรายภาคแล้ว — ภาคเหนือ vs ภาคอีสาน (ดูโดนัทด้านล่าง)",
+    charts: [
+      {
+        kind: "donut",
+        title: "เปรียบเทียบจำนวนโรงพยาบาลรัฐ — ภาคเหนือ vs ภาคอีสาน",
+        centerLabel: "รวม (แห่ง)",
+        rows: COMPARE_REGIONS.map((rg) => ({
+          label: REGION_LABEL[rg],
+          value: regionTotal(rg),
+          swatch: REGION_FILL[rg],
+        })),
+        exportName: "region-compare",
+      },
+    ],
+  };
+};
 
 /** Hospitals nationwide — region-grouped aggregation across all 77 provinces. */
 const scnNation = (): Scenario => ({
@@ -471,31 +649,274 @@ const scnNation = (): Scenario => ({
     { label: "group_by(region) → จัดกลุ่มราย 6 ภาค", wait: 480 },
   ],
   result: `ทั่วประเทศมีโรงพยาบาลรัฐรวม ${GRAND_TOTAL.toLocaleString()} แห่ง ใน 77 จังหวัด — ตัวเลขรวมรายภาคบนแผนที่`,
-  chart: {
-    kind: "bar",
-    title: "จำนวนโรงพยาบาลรัฐรายภาค — ทั่วประเทศ",
-    rows: [...REGION_BADGES]
-      .sort((a, b) => b.count - a.count)
-      .map((r) => ({ label: r.name, value: r.count })),
-    exportName: "hospitals-by-region",
-  },
+  charts: [
+    {
+      kind: "bar",
+      title: "จำนวนโรงพยาบาลรัฐรายภาค — ทั่วประเทศ",
+      rows: [...REGION_BADGES]
+        .sort((a, b) => b.count - a.count)
+        .map((r) => ({ label: r.name, value: r.count })),
+      exportName: "hospitals-by-region",
+    },
+  ],
 });
 
-/** Flood swipe-compare between two years. */
-const scnFloodCompare = (yearA: number, yearB: number): Scenario => ({
-  id: "floodcmp",
-  mode: "analysis",
-  layers: ["flood"],
-  timeActive: true,
-  swipe: { yearA, yearB },
-  interim: `กำลังวิเคราะห์การเปลี่ยนแปลงของน้ำท่วม ปี ${yearA} เทียบ ปี ${yearB}…`,
-  steps: [
-    { label: `resolve_periods() → ปี ${yearA} · ปี ${yearB}`, wait: 360 },
-    { label: `load flood_extent(${yearA}) + flood_extent(${yearB})`, wait: 470 },
-    { label: "zonal_stats(flood) → พื้นที่/เขตที่ได้รับผลกระทบ", wait: 480 },
-  ],
-  result:
-    "เปิดโหมดเทียบน้ำท่วมซ้าย–ขวาให้แล้วครับ ลากตัวแบ่งเพื่อเทียบสองปี",
+/** Flood swipe-compare between two years (LEFT = yearA, RIGHT = yearB). */
+const scnFloodCompare = (yearA: number, yearB: number): Scenario => {
+  const A = floodStatsForYear(yearA);
+  const B = floodStatsForYear(yearB);
+
+  const dRai = A.rai - B.rai;
+  const pct = B.rai ? Math.round((dRai / B.rai) * 1000) / 10 : 0;
+  const dDist = A.districts - B.districts;
+  const dir = dRai >= 0 ? "เพิ่มขึ้น" : "ลดลง";
+  const distDir = dDist >= 0 ? "เพิ่มขึ้น" : "ลดลง";
+  const sign = (n: number) => (n >= 0 ? "+" : "−");
+
+  return {
+    id: "floodcmp",
+    mode: "analysis",
+    layers: ["flood"],
+    camera: { center: [100.5, 13.74], zoom: 11, duration: 1100 },
+    timeActive: true,
+    swipe: { yearA, yearB },
+    interim: `กำลังวิเคราะห์การเปลี่ยนแปลงของน้ำท่วม ปี ${yearA} เทียบ ปี ${yearB}…`,
+    steps: [
+      { label: `resolve_periods() → ปี ${yearA} · ปี ${yearB}`, wait: 360 },
+      { label: `load flood_extent(${yearA}) + flood_extent(${yearB})`, wait: 470 },
+      { label: "zonal_stats(flood) → พื้นที่/เขตที่ได้รับผลกระทบ", wait: 480 },
+    ],
+    result: [
+      `เปิดโหมดเทียบน้ำท่วมซ้าย–ขวาให้แล้วครับ ลากตัวแบ่งกลางแผนที่เพื่อเทียบสองปี`,
+      ``,
+      `ปี ${yearA} (ซ้าย): พื้นที่น้ำท่วม ${A.rai.toLocaleString()} ไร่ · เขตที่ได้รับผลกระทบ ~${A.districts} เขต · ประชากรประมาณ ${A.pop.toLocaleString()} คน`,
+      `ปี ${yearB} (ขวา): พื้นที่น้ำท่วม ${B.rai.toLocaleString()} ไร่ · เขตที่ได้รับผลกระทบ ~${B.districts} เขต · ประชากรประมาณ ${B.pop.toLocaleString()} คน`,
+      ``,
+      `สรุป: พื้นที่น้ำท่วม${dir} ${Math.abs(pct)}% (${sign(dRai)}${Math.abs(dRai).toLocaleString()} ไร่) · เขตที่ได้รับผลกระทบ${distDir} ${Math.abs(dDist)} เขต`,
+    ].join("\n"),
+    charts: [
+      {
+        kind: "donut",
+        title: `พื้นที่น้ำท่วมรายปี — ปี ${yearA} vs ปี ${yearB}`,
+        centerLabel: "ไร่ (รวม)",
+        rows: [
+          { label: `ปี ${yearA}`, value: A.rai, swatch: FLOOD_COMPARE_SIDES.a.fill },
+          { label: `ปี ${yearB}`, value: B.rai, swatch: FLOOD_COMPARE_SIDES.b.fill },
+        ],
+        exportName: `flood-area-${yearA}-vs-${yearB}`,
+      },
+      {
+        kind: "bar",
+        title: `เขตที่ได้รับผลกระทบ — ปี ${yearA} vs ปี ${yearB}`,
+        rows: [
+          {
+            label: `ปี ${yearA}`,
+            value: A.districts,
+            swatch: FLOOD_COMPARE_SIDES.a.fill,
+          },
+          {
+            label: `ปี ${yearB}`,
+            value: B.districts,
+            swatch: FLOOD_COMPARE_SIDES.b.fill,
+          },
+        ],
+        exportName: `flood-districts-${yearA}-vs-${yearB}`,
+      },
+    ],
+  };
+};
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * DETERMINISTIC DATE-BASED FLOOD SCENARIO (Vallaris / GISTDA)
+ * Deterministic snapshots available in the system. A month query resolves to
+ * the available snapshot in that month (and the chat states the snapshot date);
+ * any other date/month resolves to an explicit empty state — never a silent
+ * substitution of another date.
+ * ────────────────────────────────────────────────────────────────────────── */
+// Registered flood observation snapshots (each is an INDEPENDENT dataset; the
+// server route maps the date → its own Vallaris collection). Add a new date +
+// its month/year aliases here and drop its fixture in src/data/flood/<date>.json.
+const FLOOD_SNAPSHOTS = new Set<string>(["2025-10-13", "2022-10-14"]);
+const FLOOD_SNAPSHOT_BY_MONTH: Record<string, string> = {
+  "2025-10": "2025-10-13",
+  "2022-10": "2022-10-14",
+};
+/** Gregorian year → the available observation snapshot for that year. */
+const FLOOD_SNAPSHOT_BY_YEAR: Record<string, string> = {
+  "2025": "2025-10-13",
+  "2022": "2022-10-14",
+};
+
+/**
+ * Tool steps mirror the PROGRESSIVE pipeline: resolve → load geometry-free
+ * overview → add hex layer → fit. Detailed polygons then stream in the
+ * background (not a blocking step). Durations are the nominal fallbacks; the
+ * view reports the REAL measured ms per step.
+ */
+function floodSteps(
+  fetchDate: string,
+  hasData: boolean,
+  queryLabel: string,
+): ScenarioStep[] {
+  const steps: ScenarioStep[] = [
+    { label: `resolve_date('${queryLabel}') → ${fetchDate}`, wait: 300 },
+    { label: `load_flood_overview(date='${fetchDate}')`, wait: 900 },
+  ];
+  if (hasData) {
+    steps.push(
+      { label: "add_overview_layer('flood_hex')", wait: 320 },
+      { label: "fit_bounds('flood_extent')", wait: 300 },
+    );
+  }
+  return steps;
+}
+
+function floodEmptyScenario(
+  meta: FloodScenarioMeta,
+  result: string,
+  queryLabel: string,
+): Scenario {
+  return {
+    id: meta.scenarioId,
+    mode: "analysis",
+    layers: [], // no flood layer toggled — nothing to render
+    flood: meta,
+    interim: "กำลังค้นหาข้อมูลพื้นที่น้ำท่วม…",
+    steps: floodSteps(meta.date, false, queryLabel),
+    result,
+  };
+}
+
+/** Build the deterministic flood scenario for a resolved date/month query. */
+function scnFloodByDate(res: FloodDateResolution): Scenario {
+  // Exact date.
+  if (res.matchMode === "exact-date" && res.resolvedDate) {
+    const date = res.resolvedDate;
+    const label = formatThaiDate(date); // "13 ตุลาคม 2568"
+    const hasData = FLOOD_SNAPSHOTS.has(date);
+    const meta: FloodScenarioMeta = {
+      scenarioId: hasData ? `flood-${date}` : `flood-empty-${date}`,
+      date,
+      matchMode: "exact-date",
+      dateLabel: label,
+      hasData,
+    };
+    if (!hasData) {
+      return floodEmptyScenario(
+        meta,
+        `ไม่พบข้อมูลพื้นที่น้ำท่วมวันที่ ${label}`,
+        label,
+      );
+    }
+    return {
+      id: meta.scenarioId,
+      mode: "analysis",
+      layers: ["flood"],
+      flood: meta,
+      interim: `กำลังค้นหาข้อมูลพื้นที่น้ำท่วมวันที่ ${label}…`,
+      steps: floodSteps(date, true, label),
+      result: [
+        `พบข้อมูลพื้นที่น้ำท่วมวันที่ ${label} แล้ว`,
+        `ขณะนี้กำลังแสดงขอบเขตพื้นที่น้ำท่วมจากข้อมูลภาพถ่ายดาวเทียมบนแผนที่`,
+      ].join("\n"),
+    };
+  }
+
+  // Year only (e.g. "น้ำท่วมปี 2565") → the year's available snapshot.
+  if (res.matchMode === "year" && res.year != null) {
+    const yearLabel = `ปี ${toBuddhistYear(res.year)}`;
+    const snapshot = FLOOD_SNAPSHOT_BY_YEAR[String(res.year)];
+    if (!snapshot) {
+      const meta: FloodScenarioMeta = {
+        scenarioId: `flood-empty-${res.year}`,
+        date: `${res.year}-01-01`,
+        matchMode: "year",
+        dateLabel: yearLabel,
+        hasData: false,
+      };
+      return floodEmptyScenario(
+        meta,
+        `ไม่พบข้อมูลพื้นที่น้ำท่วม${yearLabel}`,
+        yearLabel,
+      );
+    }
+    const snapLabel = formatThaiDate(snapshot);
+    const meta: FloodScenarioMeta = {
+      scenarioId: `flood-${snapshot}`,
+      date: snapshot,
+      matchMode: "year",
+      dateLabel: snapLabel,
+      hasData: true,
+    };
+    return {
+      id: meta.scenarioId,
+      mode: "analysis",
+      layers: ["flood"],
+      flood: meta,
+      interim: `กำลังค้นหาข้อมูลพื้นที่น้ำท่วม${yearLabel}…`,
+      steps: floodSteps(snapshot, true, yearLabel),
+      result: [
+        `พบข้อมูลพื้นที่น้ำท่วม${yearLabel}`,
+        `ชุดข้อมูลที่มีอยู่ในระบบเป็นภาพสถานการณ์วันที่ ${snapLabel}`,
+      ].join("\n"),
+    };
+  }
+
+  // Month only.
+  const month = res.resolvedMonth!;
+  const monthLabel = formatThaiMonth(month); // "ตุลาคม 2568"
+  const snapshot = FLOOD_SNAPSHOT_BY_MONTH[month];
+  if (!snapshot) {
+    const meta: FloodScenarioMeta = {
+      scenarioId: `flood-empty-${month}`,
+      date: `${month}-01`,
+      matchMode: "month",
+      queriedMonth: month,
+      dateLabel: monthLabel,
+      hasData: false,
+    };
+    return floodEmptyScenario(
+      meta,
+      `ไม่พบข้อมูลพื้นที่น้ำท่วมเดือน${monthLabel}`,
+      monthLabel,
+    );
+  }
+  const snapLabel = formatThaiDate(snapshot);
+  const meta: FloodScenarioMeta = {
+    scenarioId: `flood-${snapshot}`,
+    date: snapshot,
+    matchMode: "month",
+    queriedMonth: month,
+    dateLabel: snapLabel,
+    hasData: true,
+  };
+  return {
+    id: meta.scenarioId,
+    mode: "analysis",
+    layers: ["flood"],
+    flood: meta,
+    interim: `กำลังค้นหาข้อมูลพื้นที่น้ำท่วมเดือน${monthLabel}…`,
+    steps: floodSteps(snapshot, true, monthLabel),
+    result: [
+      `พบข้อมูลพื้นที่น้ำท่วมในเดือน${monthLabel}`,
+      `ชุดข้อมูลที่มีอยู่ในระบบเป็นภาพสถานการณ์วันที่ ${snapLabel}`,
+    ].join("\n"),
+  };
+}
+
+/**
+ * Unknown / unmatched query — NO map side-effects (the view skips everything for
+ * mode "unknown"), no tool steps, just a friendly fallback message.
+ */
+const UNKNOWN_MESSAGE =
+  "ยังไม่เข้าใจคำถามนี้ ลองถามเกี่ยวกับโรงพยาบาล น้ำท่วม หรือพื้นที่ที่ต้องการดูบนแผนที่อีกครั้งครับ";
+const scnUnknown = (): Scenario => ({
+  id: "unknown",
+  mode: "unknown",
+  layers: [],
+  interim: UNKNOWN_MESSAGE,
+  steps: [],
+  result: UNKNOWN_MESSAGE,
 });
 
 /** Detect a region keyword in the query. */
@@ -511,12 +932,54 @@ function detectRegion(t: string): string | null {
   return null;
 }
 
-/** Detect a province name in the query (Bangkok aliases included). */
+/**
+ * Thai province aliases / nicknames / English → canonical province name.
+ * The canonical name is the single source of truth downstream (scope, filter,
+ * camera, boundary, aggregation). Longer full names are matched first (below),
+ * so short aliases here only fire when the full name is absent.
+ */
+const PROVINCE_ALIASES: Record<string, string> = {
+  // Bangkok
+  กทม: "กรุงเทพมหานคร",
+  กรุงเทพ: "กรุงเทพมหานคร",
+  bangkok: "กรุงเทพมหานคร",
+  bkk: "กรุงเทพมหานคร",
+  // Ayutthaya
+  อยุธยา: "พระนครศรีอยุธยา",
+  ayutthaya: "พระนครศรีอยุธยา",
+  "phra nakhon si ayutthaya": "พระนครศรีอยุธยา",
+  // Nakhon Ratchasima
+  โคราช: "นครราชสีมา",
+  korat: "นครราชสีมา",
+  // Nakhon Si Thammarat
+  เมืองคอน: "นครศรีธรรมราช",
+  // Surat Thani
+  สุราษฎร์: "สุราษฎร์ธานี",
+  surat: "สุราษฎร์ธานี",
+  // Ubon Ratchathani
+  อุบล: "อุบลราชธานี",
+  ubon: "อุบลราชธานี",
+  // Udon Thani
+  อุดร: "อุดรธานี",
+  udon: "อุดรธานี",
+  // Common English spellings
+  "chiang mai": "เชียงใหม่",
+  chiangmai: "เชียงใหม่",
+  "chiang rai": "เชียงราย",
+  chiangrai: "เชียงราย",
+  phuket: "ภูเก็ต",
+};
+
+/** Detect a province in the query → canonical name (aliases + English). */
 function detectProvince(raw: string): string | null {
-  if (raw.includes("กรุงเทพ") || raw.toLowerCase().includes("bangkok"))
-    return "กรุงเทพมหานคร";
+  const t = raw.toLowerCase();
+  // 1. Full canonical province names (most specific — win over aliases).
   for (const name of Object.keys(PROV_CENTROID)) {
     if (raw.includes(name)) return name;
+  }
+  // 2. Aliases / nicknames / English spellings.
+  for (const [alias, canon] of Object.entries(PROVINCE_ALIASES)) {
+    if (t.includes(alias)) return canon;
   }
   return null;
 }
@@ -565,9 +1028,10 @@ export function resolveScenario(raw: string): Scenario {
     return scnBuffer5km();
   }
 
-  // Specific "show 24-hour hospitals" → POINT mode (not a count query).
+  // "Show 24-hour hospitals" (+ optional location) → POINT mode, scoped to the
+  // EXTRACTED province (never hardcoded Bangkok). No province = current extent.
   if (!countIntent && has(t, "24 ชั่วโมง", "24 ชม", "เปิด 24", "24/7")) {
-    return scnBkk24();
+    return scnCityHospitals(detectProvince(raw), true);
   }
 
   // Nationwide count → region-grouped aggregation.
@@ -588,9 +1052,23 @@ export function resolveScenario(raw: string): Scenario {
   // Any remaining count query with no explicit scope → nationwide.
   if (countIntent) return scnNation();
 
-  // Generic flood request.
+  // Flood + a resolvable date/month → deterministic date-based flood scenario
+  // (exact date or month snapshot; unknown dates give an explicit empty state).
+  if (has(t, "น้ำท่วม", "flood")) {
+    const floodDate = resolveFloodDate(raw);
+    if (floodDate.matchMode !== "none") return scnFloodByDate(floodDate);
+  }
+
+  // Generic flood request (no date) → survey extent.
   if (has(t, "น้ำท่วม", "flood")) return scnSongkran();
 
-  // Default → Bangkok 24-hour hospitals (point mode).
-  return scnBkk24();
+  // A hospital query with no more specific match → point view scoped to the
+  // extracted province (or the current extent when none is mentioned).
+  if (has(t, "โรงพยาบาล", "รพ", "hospital", "ใกล้ฉัน", "near me")) {
+    return scnCityHospitals(detectProvince(raw), false);
+  }
+
+  // Nothing recognised (random/gibberish text) → unknown: no map change, a
+  // friendly fallback message. Do NOT default to a hospital scenario.
+  return scnUnknown();
 }

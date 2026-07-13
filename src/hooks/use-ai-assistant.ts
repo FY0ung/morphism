@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ChatMessage, Scenario, ToolStep } from "@/types";
+import type {
+  ChatMessage,
+  Scenario,
+  ScenarioOutcome,
+  ScenarioStepReporter,
+  ToolStep,
+} from "@/types";
 
 const REDUCED =
   typeof window !== "undefined" &&
@@ -14,8 +20,16 @@ const uid = (p: string) => `${p}-${Date.now()}-${seq++}`;
 interface UseAiAssistantArgs {
   /** Interpret a query into a deterministic scenario (provided by the feature). */
   resolve: (text: string) => Scenario;
-  /** Called once the steps finish, so the view can apply layers/camera/time. */
-  onScenario: (scenario: Scenario) => void;
+  /**
+   * Called once the steps finish, so the view can apply layers/camera/time.
+   * May return a Promise (e.g. the flood scenario) that resolves only after the
+   * map has committed the data AND finished moving — the chat is marked complete
+   * only after it resolves, so the sidebar never reports done before the map.
+   */
+  onScenario: (
+    scenario: Scenario,
+    report?: ScenarioStepReporter,
+  ) => void | Promise<void | ScenarioOutcome>;
 }
 
 /**
@@ -58,14 +72,34 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
       const aiId = uid("ai");
       const stepId = (i: number) => `${aiId}-s${i}`;
 
-      // Build the steps list up to index `upto`, marking earlier ones done.
-      const stepsUpTo = (upto: number): ToolStep[] =>
-        scenario.steps.slice(0, upto + 1).map((s, i) => ({
-          id: stepId(i),
-          label: s.label,
-          status: i < upto ? "done" : "running",
-          ms: i < upto ? scenario.steps[i].wait : undefined,
-        }));
+      // Render steps with `doneCount` completed (each showing its measured ms,
+      // falling back to the scenario's nominal wait if not measured) and the next
+      // one "running". Reveals incrementally like the reference timeline.
+      const renderSteps = (doneCount: number, doneMs: number[]): ToolStep[] =>
+        scenario.steps
+          .slice(0, Math.min(doneCount + 1, scenario.steps.length))
+          .map((s, i) => ({
+            id: stepId(i),
+            label: s.label,
+            status: i < doneCount ? "done" : "running",
+            ms: i < doneCount ? doneMs[i] ?? s.wait : undefined,
+          }));
+
+      // Final patch: result text + all steps done with their measured durations.
+      const finalize = (doneMs: number[]) => {
+        patch(aiId, {
+          pending: false,
+          text: scenario.result,
+          charts: scenario.charts,
+          steps: scenario.steps.map((s, i) => ({
+            id: stepId(i),
+            label: s.label,
+            status: "done" as const,
+            ms: doneMs[i] ?? s.wait,
+          })),
+        });
+        setPending(false);
+      };
 
       // user message + assistant placeholder (interim text + first step running)
       setMessages((prev) => [
@@ -76,37 +110,81 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
           role: "ai",
           text: scenario.interim,
           pending: true,
-          steps: stepsUpTo(0),
+          steps: renderSteps(0, []),
         },
       ]);
 
+      // ── Flood: REAL-driven steps. The handler measures each stage and reports
+      // its true duration; steps stay "running" until their operation finishes
+      // (load = fetch/paginate/dedupe, fit_bounds = until moveend). No fake
+      // timers, so the displayed durations are the measured ones. ──────────────
+      if (scenario.flood) {
+        const doneMs: number[] = [];
+        let doneCount = 0;
+        let failedAt: number | null = null;
+        // Steps reflect the MAP's real state: a step is "done" only after its
+        // work succeeded; "error" when the map got no usable data; steps after a
+        // failure are never revealed as green.
+        const buildFloodSteps = (): ToolStep[] => {
+          const revealTo =
+            failedAt != null
+              ? failedAt + 1
+              : Math.min(doneCount + 1, scenario.steps.length);
+          return scenario.steps.slice(0, revealTo).map((s, i) => ({
+            id: stepId(i),
+            label: s.label,
+            status: failedAt === i ? "error" : i < doneCount ? "done" : "running",
+            ms:
+              failedAt === i || i < doneCount ? doneMs[i] ?? s.wait : undefined,
+          }));
+        };
+        const report: ScenarioStepReporter = {
+          done: (index, ms) => {
+            doneMs[index] = ms;
+            doneCount = index + 1;
+            patch(aiId, { steps: buildFloodSteps() });
+          },
+          fail: (index, ms) => {
+            if (ms != null) doneMs[index] = ms;
+            failedAt = index;
+            patch(aiId, { steps: buildFloodSteps() });
+          },
+        };
+        const finishFlood = (outcome: void | ScenarioOutcome) => {
+          const ok = !(outcome && outcome.ok === false);
+          patch(aiId, {
+            pending: false,
+            text: ok ? scenario.result : outcome?.message ?? scenario.result,
+            charts: ok ? scenario.charts : undefined,
+            steps: buildFloodSteps(),
+          });
+          setPending(false);
+        };
+        void Promise.resolve(onScenario(scenario, report))
+          .then(finishFlood)
+          .catch(() => {
+            if (failedAt == null)
+              failedAt = Math.min(1, scenario.steps.length - 1);
+            finishFlood({ ok: false });
+          });
+        return;
+      }
+
+      // ── Non-flood: legacy timed animation (nominal waits). ──────────────────
       const run = (fn: () => void, at: number) => {
         timers.current.push(setTimeout(fn, REDUCED ? 0 : at));
       };
-
-      // Reveal/advance each step at its cumulative offset.
+      const nominal = scenario.steps.map((s) => s.wait);
       let elapsed = 0;
       scenario.steps.forEach((step, k) => {
         const at = elapsed;
-        if (k > 0) run(() => patch(aiId, { steps: stepsUpTo(k) }), at);
+        if (k > 0) run(() => patch(aiId, { steps: renderSteps(k, nominal) }), at);
         elapsed += step.wait;
       });
-
-      // Finish: all steps done, swap interim → result, attach chart.
       run(() => {
-        patch(aiId, {
-          pending: false,
-          text: scenario.result,
-          chart: scenario.chart,
-          steps: scenario.steps.map((s, i) => ({
-            id: stepId(i),
-            label: s.label,
-            status: "done" as const,
-            ms: s.wait,
-          })),
-        });
-        onScenario(scenario);
-        setPending(false);
+        void Promise.resolve(onScenario(scenario)).finally(() =>
+          finalize(nominal),
+        );
       }, elapsed);
     },
     [pending, resolve, onScenario, patch],

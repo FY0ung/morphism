@@ -7,6 +7,8 @@ export interface HospitalProps {
   h24: boolean;
   /** ดัชนีจังหวัด (อ้างอิงตารางจังหวัด) — optional */
   province?: string;
+  /** อยู่ในรัศมีวิเคราะห์ (buffer) → ลงสีแดง */
+  risk?: boolean;
 }
 
 export type HospitalFC = FeatureCollection<HospitalProps>;

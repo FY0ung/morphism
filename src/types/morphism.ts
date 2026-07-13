@@ -13,7 +13,7 @@ export interface LayerState {
 export type LayersState = Record<LayerId, LayerState>;
 
 /** หนึ่งขั้นตอนของ "เครื่องมือ" ที่ AI เรียกใช้ (โชว์ใน chat) */
-export type ToolStepStatus = "running" | "done";
+export type ToolStepStatus = "running" | "done" | "error";
 
 export interface ToolStep {
   id: string;
@@ -27,12 +27,16 @@ export interface ToolStep {
 export interface ChartRow {
   label: string;
   value: number;
+  /** คลาส token สำหรับสีเฉพาะแถว (เช่น "fill-background-info-default") — ถ้าไม่ระบุใช้สีเริ่มต้น */
+  swatch?: string;
 }
 
 export interface ChartData {
   kind: "bar" | "donut";
   title: string;
   rows: ChartRow[];
+  /** คำอธิบายกลางโดนัท (เช่น "ไร่ (รวม)") */
+  centerLabel?: string;
   /** ใช้ตั้งชื่อไฟล์ตอน export */
   exportName: string;
 }
@@ -47,7 +51,7 @@ export interface ChatMessage {
   /** true ระหว่าง AI กำลังประมวลผล */
   pending?: boolean;
   steps?: ToolStep[];
-  chart?: ChartData;
+  charts?: ChartData[];
   /** ข้อความสรุปผล (เช่น "พบ 128 แห่ง") */
   result?: string;
 }
@@ -88,13 +92,61 @@ export interface ProvinceCount {
   count: number;
 }
 
-/** โหมดการแสดงผลของ scenario */
-export type ScenarioMode = "points" | "aggregate" | "analysis";
+/** โหมดการแสดงผลของ scenario ("unknown" = ไม่แตะแผนที่) */
+export type ScenarioMode = "points" | "aggregate" | "analysis" | "unknown";
+
+/** วิธี resolve วันที่ของ scenario น้ำท่วม (ตรงวัน / ทั้งเดือน / ทั้งปี) */
+export type FloodMatchMode = "exact-date" | "month" | "year";
+
+/**
+ * Metadata for the deterministic date-based flood scenario. All fields are
+ * STABLE PRIMITIVES so the view can key its fetch effect on
+ * `[scenarioId, date]` without an object/FeatureCollection dependency (the
+ * previous infinite-request bug came from unstable deps).
+ */
+export interface FloodScenarioMeta {
+  /** e.g. "flood-2025-10-13" (or "flood-empty-2025-09" when no data exists). */
+  scenarioId: string;
+  /** Observation date to fetch + display (YYYY-MM-DD). */
+  date: string;
+  /** How the query was interpreted. */
+  matchMode: FloodMatchMode;
+  /** Queried month (YYYY-MM) — set for month-mode messaging. */
+  queriedMonth?: string;
+  /** Thai legend label, e.g. "13 ตุลาคม 2568". */
+  dateLabel: string;
+  /** False when the query resolved to a date/month with no dataset. */
+  hasData: boolean;
+}
 
 /** หนึ่งขั้นตอนเครื่องมือ: ป้าย + เวลาที่ใช้ (ms) ก่อนไปขั้นถัดไป */
 export interface ScenarioStep {
   label: string;
   wait: number;
+}
+
+/**
+ * Reports REAL tool-step progress from the scenario handler back to the chat, so
+ * each step's displayed duration reflects actual elapsed time (not a hardcoded
+ * value) and a step stays "running" until its real operation finishes.
+ */
+export interface ScenarioStepReporter {
+  /** Mark step `index` done with its measured duration (ms); reveal the next. */
+  done: (index: number, ms: number) => void;
+  /** Mark step `index` FAILED/empty — the map did not get usable data, so the
+   *  chat must not report success. Stops revealing further steps. */
+  fail: (index: number, ms?: number) => void;
+}
+
+/**
+ * Outcome a scenario handler reports back so the chat's final state matches the
+ * MAP's actual state (single source of truth). `ok: false` → the chat shows the
+ * empty/error message + a failed step instead of the baked success result.
+ */
+export interface ScenarioOutcome {
+  ok: boolean;
+  /** Result text to show when `ok` is false (empty / error). */
+  message?: string;
 }
 
 /** ผลการตีความคำถาม (deterministic scenario — ดู resolveScenario ใน const.tsx) */
@@ -113,14 +165,26 @@ export interface Scenario {
   aggregate?: ProvinceCount[];
   /** รายชื่อจังหวัดที่ต้องวาดโพลิกอนขอบเขต (โหมด aggregate) */
   provinceNames?: string[];
+  /**
+   * ขอบเขตชุดข้อมูลโรงพยาบาลของ scenario (โหมด points) — กรองก่อนแสดง/รวมกลุ่ม
+   * เช่น กรุงเทพ + 24 ชม. เพื่อไม่ให้ใช้ทั้งประเทศ. ถ้าไม่ระบุ = ใช้ชุดเต็ม.
+   */
+  hospitalScope?: { province?: string; h24?: boolean };
+  /**
+   * โหมดเปรียบเทียบรายภาค: วาดขอบเขตรายภาค (สีประจำภาค) + ตัวเลขหนึ่งป้ายต่อภาค
+   * ซ่อนหมุด รพ. และไม่ลงลึก ADM2/ADM3. คู่กับ aggregate ที่เป็น "หนึ่งภาคต่อรายการ".
+   */
+  regionCompare?: boolean;
   /** เปิดตัวกรองเวลาหรือไม่ */
   timeActive?: boolean;
   /** ป้ายช่วงเวลาที่แสดงในชิปบนแผนที่ */
   timeLabel?: string;
-  /** การ์ดกราฟ (ถ้ามี) */
-  chart?: ChartData;
+  /** การ์ดกราฟ (มีได้หลายใบ เช่น donut + bar ในโหมดเทียบน้ำท่วม) */
+  charts?: ChartData[];
   /** เปิดโหมดเทียบน้ำท่วมซ้าย–ขวา (ถ้ามี) */
   swipe?: SwipeCompare;
+  /** โหมดน้ำท่วมตามวันที่ (deterministic date scenario) — ถ้ามี */
+  flood?: FloodScenarioMeta;
   /** ข้อความระหว่างประมวลผล (โชว์ก่อน steps เสร็จ) */
   interim: string;
   /** ลำดับขั้นตอนเครื่องมือ (ป้าย + เวลา) */

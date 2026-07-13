@@ -6,3 +6,4 @@ export { useChatResizer } from "./use-chat-resizer";
 export { useAiAssistant } from "./use-ai-assistant";
 export { useMorphismMap } from "./use-morphism-map";
 export { useFloodSwipe } from "./use-flood-swipe";
+export { useAdminHierarchy } from "./use-admin-hierarchy";

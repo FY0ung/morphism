@@ -26,7 +26,19 @@
     "boundariesError": "Couldn't load province boundaries — showing totals only",
     "legend": {
       "hospitalsPublic": "Hospitals (public)",
-      "boundaryData": "Administrative boundary (data area only)"
+      "boundaryData": "Administrative boundary (data area only)",
+      "floodYear": "Flood areas — Year {{year}}",
+      "floodDate": "Flood areas — {{date}}",
+      "floodSample": "Showing a partial sample of the dataset"
+    },
+    "admStatus": {
+      "loading": "Loading detailed boundaries…",
+      "error": "Couldn't load detailed boundaries — showing province level",
+      "empty": "No data at this level"
+    },
+    "popup": {
+      "open24": "Open 24 hours",
+      "normalHours": "Regular hours"
     },
     "settingsTitle": "Layout direction",
     "settingsAria": "Settings",
@@ -34,7 +46,13 @@
     "theme": {
       "title": "Theme",
       "dark": "Dark",
-      "light": "Light"
+      "light": "Light",
+      "colorblind": "Color Blindness",
+      "darkDesc": "Recommended for low-light environments.",
+      "lightDesc": "Better visibility in bright environments.",
+      "colorblindDesc": "Accessibility-friendly color palette.",
+      "comingSoon": "Coming Soon",
+      "selected": "Selected"
     },
     "undo": "Undo",
     "redo": "Redo",
@@ -81,6 +99,7 @@
       "aria": "Flood swipe comparison mode",
       "divider": "Comparison divider (drag or use the left/right arrow keys)",
       "valueText": "Left side revealed {{pct}}%",
+      "side": "Year {{year}}",
       "close": "Close comparison"
     },
     "result": "Map layers updated",
@@ -91,6 +110,11 @@
       "applied": "Map updated",
       "undone": "Undone",
       "redone": "Redone"
+    },
+    "flood": {
+      "error": "Couldn't load flood areas right now",
+      "emptyDate": "No flood data for {{date}}",
+      "emptyMonth": "No flood data for {{month}}"
     }
   }
 }

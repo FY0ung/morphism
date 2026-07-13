@@ -9,13 +9,25 @@ export type {
 } from "./geo";
 export { emptyFC } from "./geo";
 export type { HospitalProps, HospitalFC, HospitalQuery } from "./hospital";
-export type { FloodProps, FloodFC } from "./flood";
+export type {
+  FloodProps,
+  FloodFC,
+  FloodAreaProps,
+  FloodAreaFC,
+  FloodFeature,
+  FloodFeatureProperties,
+  FloodFeatureCollection,
+  FloodApiResponse,
+} from "./flood";
 export type {
   BoundaryLevel,
   BoundaryProps,
   BoundaryFC,
   ProvinceBoundaryProps,
   ProvinceBoundaryFC,
+  AdmLevel,
+  AdmProps,
+  AdmFC,
 } from "./boundary";
 export type {
   LayerId,
@@ -35,4 +47,8 @@ export type {
   ScenarioStep,
   Scenario,
   SwipeCompare,
+  FloodMatchMode,
+  FloodScenarioMeta,
+  ScenarioStepReporter,
+  ScenarioOutcome,
 } from "./morphism";

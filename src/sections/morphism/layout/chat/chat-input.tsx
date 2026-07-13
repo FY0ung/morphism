@@ -24,13 +24,13 @@ export default function ChatInput({ onSend, disabled }: Props) {
 
   return (
     <form
-      className="border-t border-border-default-default px-4 pb-4 pt-3"
+      className="border-t border-border-default-default p-4"
       onSubmit={(e) => {
         e.preventDefault();
         submit();
       }}
     >
-      <div className="flex items-center gap-2 rounded-full border-[1.5px] border-border-default-default bg-background-default-light py-1 pl-4 pr-1 transition-colors focus-within:border-border-primary-default">
+      <div className="flex items-center gap-2 rounded-full border-2 border-border-default-default bg-background-default-light p-2 h-14! transition-colors focus-within:border-border-primary-default">
         <input
           type="text"
           value={value}
@@ -47,9 +47,9 @@ export default function ChatInput({ onSend, disabled }: Props) {
           size="medium"
           disabled={disabled || value.trim() === ""}
           aria-label={t("morphism.send")}
-          className="flex-none transition-transform hover:scale-105 disabled:cursor-not-allowed disabled:!bg-background-default-light disabled:!text-text-default-disable motion-reduce:hover:scale-100"
+          className="flex-none transition-transform hover:scale-105 disabled:cursor-not-allowed disabled:bg-background-default-light! disabled:text-text-default-disable! motion-reduce:hover:scale-100"
         >
-          <Icon name="Send01" className="size-4" />
+          <Icon name="Send01"/>
         </IconButton>
       </div>
     </form>
