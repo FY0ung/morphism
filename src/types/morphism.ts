@@ -54,6 +54,12 @@ export interface ChatMessage {
   charts?: ChartData[];
   /** ข้อความสรุปผล (เช่น "พบ 128 แห่ง") */
   result?: string;
+  /**
+   * Raw user query that produced THIS assistant message. Kept so the transcript
+   * can be re-resolved (text/step labels/charts) when the UI language changes,
+   * so old replies follow the active EN/TH setting instead of freezing.
+   */
+  query?: string;
 }
 
 /** ทิศการจัดวางหน้าจอ */

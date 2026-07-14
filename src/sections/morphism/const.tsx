@@ -17,10 +17,14 @@ import { FLOOD_SURVEY } from "./flood-survey";
 import { FLOOD_COMPARE_SIDES } from "@/configs/flood-compare";
 import {
   resolveFloodDate,
+  detectFloodMonth,
+  detectMonthPeriod,
+  periodDayRange,
   formatDate,
   formatMonth,
   toBuddhistYear,
   type FloodDateResolution,
+  type MonthPeriod,
 } from "@/lib/flood-date";
 import type { TFunction } from "@/languages/types";
 
@@ -1064,6 +1068,97 @@ function floodEmptyScenario(
 }
 
 /** Build the deterministic flood scenario for a resolved date/month query. */
+/** Newest observation date overall (ISO max of the available snapshots). */
+function latestSnapshotDate(): string {
+  return [...FLOOD_SNAPSHOTS].sort().at(-1)!;
+}
+
+/** Newest "YYYY-MM" that has a snapshot for the given month number (1–12). */
+function latestMonthKey(monthNum: number): string | undefined {
+  const mm = String(monthNum).padStart(2, "0");
+  return [...FLOOD_SNAPSHOTS]
+    .filter((d) => d.slice(5, 7) === mm)
+    .map((d) => d.slice(0, 7))
+    .sort()
+    .at(-1);
+}
+
+/** Snapshots (ISO, ascending) in "YYYY-MM" whose day falls within [lo, hi]. */
+function snapshotsInWindow(monthKey: string, lo: number, hi: number): string[] {
+  return [...FLOOD_SNAPSHOTS]
+    .filter((d) => d.slice(0, 7) === monthKey)
+    .filter((d) => {
+      const day = Number(d.slice(8, 10));
+      return day >= lo && day <= hi;
+    })
+    .sort();
+}
+
+/** i18n key for a month-period modifier ("early"/"mid"/"late"). */
+const PERIOD_LABEL_KEY: Record<MonthPeriod, string> = {
+  early: "morphism.scenario.flood.periodEarly",
+  mid: "morphism.scenario.flood.periodMid",
+  late: "morphism.scenario.flood.periodLate",
+};
+
+/**
+ * "ต้น/กลาง/ปลายเดือน" → a DATE RANGE. Finds every snapshot inside the period's
+ * day window for `monthKey`, displays the newest one, and reports the span
+ * (from…to) to the user. Returns null when the window has no data (caller then
+ * falls back to plain month handling).
+ */
+function scnFloodByPeriod(
+  monthKey: string,
+  period: MonthPeriod,
+  t: TFunction,
+  lang: Lang,
+): Scenario | null {
+  const [lo, hi] = periodDayRange(period);
+  const inWindow = snapshotsInWindow(monthKey, lo, hi);
+  if (!inWindow.length) return null;
+
+  const from = inWindow[0];
+  const to = inWindow.at(-1)!;
+  const date = to; // display the newest snapshot within the window
+  const periodWord = t(PERIOD_LABEL_KEY[period] as "morphism.scenario.flood.periodMid");
+  const monthLabel = formatMonth(monthKey, lang); // "ตุลาคม 2568" / "October 2025"
+  const rangeLabel =
+    from === to
+      ? formatDate(to, lang)
+      : `${formatDate(from, lang)} – ${formatDate(to, lang)}`;
+  const snapLabel = formatDate(date, lang);
+
+  const meta: FloodScenarioMeta = {
+    scenarioId: `flood-${date}`,
+    date,
+    matchMode: "month",
+    queriedMonth: monthKey,
+    dateLabel: snapLabel,
+    hasData: true,
+  };
+  return {
+    id: meta.scenarioId,
+    mode: "analysis",
+    layers: ["flood"],
+    flood: meta,
+    timeActive: true,
+    timeLabel: rangeLabel,
+    interim: t("morphism.scenario.flood.searchingPeriod", {
+      period: periodWord,
+      month: monthLabel,
+    }),
+    steps: floodSteps(date, true, `${periodWord}${monthLabel}`, t),
+    result: [
+      t("morphism.scenario.flood.foundPeriodLine1", {
+        period: periodWord,
+        month: monthLabel,
+        range: rangeLabel,
+      }),
+      t("morphism.scenario.flood.periodSnapshot", { date: snapLabel }),
+    ].join("\n"),
+  };
+}
+
 function scnFloodByDate(
   res: FloodDateResolution,
   t: TFunction,
@@ -1094,6 +1189,8 @@ function scnFloodByDate(
       mode: "analysis",
       layers: ["flood"],
       flood: meta,
+      timeActive: true,
+      timeLabel: label,
       interim: t("morphism.scenario.flood.searchingDate", { date: label }),
       steps: floodSteps(date, true, label, t),
       result: [
@@ -1138,6 +1235,8 @@ function scnFloodByDate(
       mode: "analysis",
       layers: ["flood"],
       flood: meta,
+      timeActive: true,
+      timeLabel: snapLabel,
       interim: t("morphism.scenario.flood.searchingYear", { year: yearLabel }),
       steps: floodSteps(snapshot, true, yearLabel, t),
       result: [
@@ -1181,6 +1280,8 @@ function scnFloodByDate(
     mode: "analysis",
     layers: ["flood"],
     flood: meta,
+    timeActive: true,
+    timeLabel: snapLabel,
     interim: t("morphism.scenario.flood.searchingMonth", { month: monthLabel }),
     steps: floodSteps(snapshot, true, monthLabel, t),
     result: [
@@ -1347,8 +1448,62 @@ export function resolveScenario(
   // (exact date or month snapshot; unknown dates give an explicit empty state).
   if (has(q, "น้ำท่วม", "flood")) {
     const floodDate = resolveFloodDate(raw);
+
+    // "ต้น/กลาง/ปลายเดือน" → a DATE RANGE within the month (e.g. mid-October =
+    // 11–20). Resolve the target month from an explicit date/month if present,
+    // else the newest year that has that month's data, then show the range.
+    const period = detectMonthPeriod(raw);
+    if (period) {
+      let monthKey: string | undefined;
+      if (floodDate.matchMode === "month" && floodDate.resolvedMonth) {
+        monthKey = floodDate.resolvedMonth;
+      } else if (floodDate.matchMode === "exact-date" && floodDate.resolvedDate) {
+        monthKey = floodDate.resolvedDate.slice(0, 7);
+      } else {
+        const m = detectFloodMonth(raw);
+        if (m != null) monthKey = latestMonthKey(m);
+      }
+      if (monthKey) {
+        const periodScn = scnFloodByPeriod(monthKey, period, t, lang);
+        if (periodScn) return periodScn;
+      }
+    }
+
     if (floodDate.matchMode !== "none")
       return scnFloodByDate(floodDate, t, lang);
+
+    // No explicit year, but a month word (e.g. "น้ำท่วมเดือนตุลาล่าสุด" /
+    // "latest October flood") → the most recent snapshot for that month.
+    const monthNum = detectFloodMonth(raw);
+    const monthKey = monthNum != null ? latestMonthKey(monthNum) : undefined;
+    if (monthNum != null && monthKey) {
+      return scnFloodByDate(
+        {
+          matchMode: "month",
+          resolvedMonth: monthKey,
+          year: Number(monthKey.slice(0, 4)),
+          month: monthNum,
+        },
+        t,
+        lang,
+      );
+    }
+
+    // "latest / most recent flood" with no month or date → newest snapshot.
+    if (has(q, "ล่าสุด", "ล่าสุ", "latest", "recent", "newest", "most recent")) {
+      const d = latestSnapshotDate();
+      return scnFloodByDate(
+        {
+          matchMode: "exact-date",
+          resolvedDate: d,
+          year: Number(d.slice(0, 4)),
+          month: Number(d.slice(5, 7)),
+          day: Number(d.slice(8, 10)),
+        },
+        t,
+        lang,
+      );
+    }
   }
 
   // Generic flood request (no date) → survey extent.

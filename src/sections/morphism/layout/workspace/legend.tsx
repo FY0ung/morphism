@@ -92,7 +92,7 @@ export default function Legend({
               className="size-3 flex-none rounded-sm bg-background-info-default"
               aria-hidden
             />
-            {t("morphism.legend.floodDate", { date: floodDateLabel })}
+            {t("morphism.layer.flood")}
           </li>
           {floodPartial && (
             <li className="text-xs text-text-default-disable">

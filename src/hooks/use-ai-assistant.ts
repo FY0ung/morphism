@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   ChatMessage,
@@ -55,6 +55,7 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
     },
     [],
   );
+
 
   const patch = useCallback((id: string, update: Partial<ChatMessage>) => {
     setMessages((prev) =>
@@ -111,6 +112,7 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
           text: scenario.interim,
           pending: true,
           steps: renderSteps(0, []),
+          query: text,
         },
       ]);
 
@@ -190,5 +192,30 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
     [pending, resolve, onScenario, patch],
   );
 
-  return { messages, ask, pending };
+  // Present the transcript in the ACTIVE language: settled AI messages are
+  // re-resolved from their stored query so past replies follow the EN/TH
+  // setting instead of freezing in the language they were generated in.
+  // `resolve` is pure and closes over the current language, so this is derived
+  // (no setState-in-effect). Measured step durations + statuses are preserved —
+  // only the human-readable labels/text/charts are swapped.
+  const displayMessages = useMemo<ChatMessage[]>(
+    () =>
+      messages.map((m) => {
+        if (m.id === "greeting") return { ...m, text: t("morphism.greeting") };
+        if (m.role !== "ai" || m.pending || !m.query) return m;
+        const s = resolve(m.query);
+        return {
+          ...m,
+          text: s.result,
+          charts: s.charts ?? m.charts,
+          steps: m.steps?.map((st, i) => ({
+            ...st,
+            label: s.steps[i]?.label ?? st.label,
+          })),
+        };
+      }),
+    [messages, resolve, t],
+  );
+
+  return { messages: displayMessages, ask, pending };
 }

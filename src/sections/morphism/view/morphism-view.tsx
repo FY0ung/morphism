@@ -561,8 +561,10 @@ const MorphismView = () => {
         pendingAggScenarioRef.current = null;
         setSwipe(null);
         setFloodCompare(null, null);
-        setTimeActive(false);
-        setTimeLabel(null);
+        // Reflect the observation date/range in the time-filter pill (real
+        // snapshots set timeActive; empty-date scenarios leave it cleared).
+        setTimeActive(Boolean(scenario.timeActive));
+        setTimeLabel(scenario.timeActive ? scenario.timeLabel ?? null : null);
         // Hide every overlay while loading — crucially this prevents the MOCK
         // flood extent from flashing at Bangkok. The flood layer is revealed
         // atomically only once the real dataset is committed. Camera NOT moved

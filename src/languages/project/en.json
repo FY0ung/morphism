@@ -214,7 +214,13 @@
         "foundMonthLine1": "Found flood-area data for {{month}}.",
         "foundYearLine1": "Found flood-area data for {{year}}.",
         "snapshotLine": "The dataset available in the system is a snapshot from {{date}}.",
-        "yearLabel": "Year {{year}}"
+        "yearLabel": "Year {{year}}",
+        "periodEarly": "early ",
+        "periodMid": "mid-",
+        "periodLate": "late ",
+        "searchingPeriod": "Searching for flood-area data for {{period}}{{month}}…",
+        "foundPeriodLine1": "Found flood-area data for {{period}}{{month}} ({{range}}).",
+        "periodSnapshot": "Showing the latest snapshot in this range: {{date}}."
       },
       "unknown": "I didn't quite understand that. Try asking about hospitals, flooding, or an area you'd like to see on the map."
     }

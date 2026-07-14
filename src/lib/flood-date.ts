@@ -113,6 +113,35 @@ function detectMonth(lower: string): number | undefined {
   return undefined;
 }
 
+/** Public: month number (1–12) for a month word in free text, else undefined. */
+export function detectFloodMonth(raw: string): number | undefined {
+  return detectMonth(raw.trim().toLowerCase());
+}
+
+/** Part-of-month modifier: ต้นเดือน / กลางเดือน / ปลายเดือน (early/mid/late). */
+export type MonthPeriod = "early" | "mid" | "late";
+
+/**
+ * Detect a "part of the month" phrase in free text (Thai or English), e.g.
+ * "กลางเดือนตุลา" → "mid". Only fires on the explicit month-part idioms so it
+ * never clashes with the ภาคกลาง (central region) keyword.
+ */
+export function detectMonthPeriod(raw: string): MonthPeriod | undefined {
+  const l = raw.toLowerCase();
+  if (/ต้นเดือน|ช่วงต้นเดือน|\bearly\b|\bbeginning\b/.test(l)) return "early";
+  if (/ปลายเดือน|สิ้นเดือน|ช่วงปลายเดือน|\blate\b|\bend of\b/.test(l))
+    return "late";
+  if (/กลางเดือน|ช่วงกลางเดือน|\bmid\b|\bmid-|\bmiddle\b/.test(l)) return "mid";
+  return undefined;
+}
+
+/** Inclusive day window [lo, hi] for a month-period modifier. */
+export function periodDayRange(period: MonthPeriod): [number, number] {
+  if (period === "early") return [1, 10];
+  if (period === "mid") return [11, 20];
+  return [21, 31];
+}
+
 /**
  * Resolve a free-text query (Thai or Gregorian) to a flood observation date or
  * month. Returns matchMode "none" when no month+year could be extracted.
