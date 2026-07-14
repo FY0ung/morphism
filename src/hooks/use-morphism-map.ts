@@ -51,105 +51,31 @@ const INITIAL_ZOOM = 11.4;
 // satisfies maplibre's GeoJsonProperties. (LayerData inputs stay generic.)
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
-// ── Vertical half-plane clipping (for the flood swipe-compare) ──────────────
-// Clip each year's polygons to one side of the divider (a vertical line at
-// longitude `lng`), so the swipe truly shows year A on the left and year B on
-// the right — never both years overlaid on the same side.
-type Ring = number[][];
-
-function clipRingVertical(ring: Ring, lng: number, keepLeft: boolean): Ring {
-  const closed =
-    ring.length > 1 &&
-    ring[0][0] === ring[ring.length - 1][0] &&
-    ring[0][1] === ring[ring.length - 1][1];
-  const pts = closed ? ring.slice(0, -1) : ring.slice();
-  if (pts.length < 3) return [];
-  const inside = (p: number[]) => (keepLeft ? p[0] <= lng : p[0] >= lng);
-  const intersect = (a: number[], b: number[]): number[] => {
-    const dx = b[0] - a[0];
-    const t = dx === 0 ? 0 : (lng - a[0]) / dx;
-    return [lng, a[1] + t * (b[1] - a[1])];
-  };
-  const out: Ring = [];
-  for (let i = 0; i < pts.length; i++) {
-    const cur = pts[i];
-    const prev = pts[(i - 1 + pts.length) % pts.length];
-    const curIn = inside(cur);
-    const prevIn = inside(prev);
-    if (curIn) {
-      if (!prevIn) out.push(intersect(prev, cur));
-      out.push(cur);
-    } else if (prevIn) {
-      out.push(intersect(prev, cur));
-    }
-  }
-  if (out.length < 3) return [];
-  out.push(out[0]); // re-close the ring
-  return out;
-}
-
-function clipFCVertical(
-  fc: FeatureCollection<unknown>,
-  lng: number,
-  keepLeft: boolean,
-): FeatureCollection<unknown> {
-  // Clip one polygon (outer ring + holes); null when the outer ring is fully
-  // outside the kept half.
-  const clipPolygon = (rings: number[][][]): number[][][] | null => {
-    const clipped = rings
-      .map((r) => clipRingVertical(r, lng, keepLeft))
-      .filter((r) => r.length >= 4);
-    return clipped.length ? clipped : null;
-  };
-  type Feat = FeatureCollection<unknown>["features"][number];
-  return {
-    type: "FeatureCollection",
-    features: fc.features.flatMap((f): Feat[] => {
-      const g = f.geometry as { type: string; coordinates: unknown } | null;
-      if (!g) return [];
-      if (g.type === "Polygon") {
-        const poly = clipPolygon(g.coordinates as number[][][]);
-        if (!poly) return [];
-        return [
-          {
-            type: "Feature",
-            properties: f.properties,
-            geometry: { type: "Polygon", coordinates: poly },
-          } as Feat,
-        ];
-      }
-      // Real Vallaris extents are MultiPolygon — clip each part and keep the
-      // survivors (previously these were dropped entirely → nothing drawn).
-      if (g.type === "MultiPolygon") {
-        const polys = (g.coordinates as number[][][][])
-          .map(clipPolygon)
-          .filter((p): p is number[][][] => p !== null);
-        if (!polys.length) return [];
-        return [
-          {
-            type: "Feature",
-            properties: f.properties,
-            geometry: { type: "MultiPolygon", coordinates: polys },
-          } as Feat,
-        ];
-      }
-      return [];
-    }),
-  } as FeatureCollection<unknown>;
-}
-
 /**
  * Per-year data for the flood swipe-compare: the SAME zoom LOD as the rest of
- * the app — progressively finer HEX aggregations as you zoom. Only hexes are
- * kept (never the raw nationwide detail), so two years fit in memory and the
- * per-frame clip stays cheap. `ultra` (fine cells) stands in for the single-date
- * detail level at high zoom; picked by `applyFloodClip`.
+ * the app — progressively finer HEX aggregations as you zoom. Each LOD is fed
+ * ONCE per compare session into its own source; MapLibre's minzoom/maxzoom pick
+ * which resolution renders, so zooming and dragging never re-upload geometry.
+ * (The old per-frame vertical geometry clip + setData is gone — the divider is
+ * pure CSS clipping of the overlay map, see use-flood-compare-overlay.)
  */
 export interface FloodCompareData {
   coarse: FeatureCollection<unknown>;
   medium: FeatureCollection<unknown>;
   fine: FeatureCollection<unknown>;
 }
+
+// Compare-side layer ids on the MAIN map (side A only; side B lives on the
+// swipe overlay map). Stable ids — sources/layers are installed once and fed,
+// never torn down/recreated during a session.
+const FLOOD_CMP_A_SOURCES = [
+  ...FLOOD_HEX_LEVELS.map((lvl) => `flood-a-${lvl.key}`),
+  "flood-a-detail",
+] as const;
+const FLOOD_CMP_A_LAYERS = FLOOD_CMP_A_SOURCES.flatMap((s) => [
+  `${s}-fill`,
+  `${s}-line`,
+]);
 
 // Single overview marker (z < 6) — the focused dataset's TOTAL count at its
 // count-weighted centroid. Mirrors the HTML `summaryFeature()`.
@@ -226,21 +152,16 @@ export function useMorphismMap({
   const subdistrictDataRef = useRef<FeatureCollection<unknown> | null>(null);
   const districtActiveRef = useRef(false);
   const subdistrictActiveRef = useRef(false);
-  // Flood year-compare: year A + year B are drawn as their OWN colour-coded
-  // layers on the main map (year A = info-blue, year B = secondary-purple), so
-  // both years are always visible and distinct regardless of the swipe overlay.
-  // Kept in refs so they survive a style swap (re-installed in installLayers).
+  // Flood year-compare: side A (info-blue) is drawn on the MAIN map as hex-LOD
+  // + viewport-detail layers; side B lives on the swipe OVERLAY map (see
+  // use-flood-compare-overlay), whose container the divider clips with pure
+  // CSS. Kept in refs so a theme style swap re-installs the same data.
   const floodCmpARef = useRef<FloodCompareData | null>(null);
-  const floodCmpBRef = useRef<FloodCompareData | null>(null);
   const floodCmpActiveRef = useRef(false);
   // High-zoom REAL detail cropped to the current viewport (fetched on demand by
-  // the view). When present + zoomed past the detail band it replaces the hex,
-  // so compare shows real polygons like the single-date view — kept small
-  // (viewport-only) so memory stays bounded regardless of dataset size.
+  // the view, debounced on moveend). Viewport-only, so memory stays bounded
+  // regardless of dataset size.
   const floodCmpDetailARef = useRef<FeatureCollection<unknown> | null>(null);
-  const floodCmpDetailBRef = useRef<FeatureCollection<unknown> | null>(null);
-  // Divider position (0–100, % from the left) driving the per-year clip.
-  const floodClipRef = useRef(50);
   // Low-zoom flood hex OVERVIEWS (coarse/medium/fine) derived from the active
   // date dataset — swapped by zoom band so flooding stays legible when zoomed
   // out. Kept in refs so it survives a theme style swap; active only for a
@@ -335,43 +256,19 @@ export function useMorphismMap({
     set("adm-subdistrict-line", showSubCtx);
   }, []);
 
-  // Re-clip the two year layers against the current divider longitude. Year A
-  // keeps the left of the divider, year B keeps the right — so the swipe shows
-  // each year only on its own side. Re-run on divider move AND camera move.
-  const applyFloodClip = useCallback(() => {
-    const m = mapRef.current;
-    if (!m || !floodCmpActiveRef.current) return;
-    const a = floodCmpARef.current;
-    const b = floodCmpBRef.current;
-    if (!a || !b) return;
-    const container = m.getContainer();
-    const x = (floodClipRef.current / 100) * container.clientWidth;
-    const lng = m.unproject([x, container.clientHeight / 2]).lng;
-    const setSrc = (id: string, fc: FeatureCollection<unknown>) => {
-      const src = m.getSource(id);
-      if (src && "setData" in src)
-        (src as { setData: (d: FeatureCollection<unknown>) => void }).setData(fc);
-    };
-
-    // SAME zoom bands as the single-date view: coarser hexes when zoomed out,
-    // finer as you zoom in (ultra ≈ the detail band). All levels are small
-    // aggregations, so the vertical clip is cheap every frame.
-    const zoom = m.getZoom();
-    const detailZoom = zoom >= FLOOD_DETAIL_MIN_ZOOM;
-    const levelFor = (d: FloodCompareData): FeatureCollection<unknown> => {
-      if (zoom >= 6) return d.fine; // fine hex is the detail-zoom fallback too
-      if (zoom >= 5) return d.medium;
-      return d.coarse;
-    };
-    // At detail zoom, draw the REAL viewport detail once it's loaded (and has
-    // features); otherwise fall back to the fine hex until the fetch resolves.
-    const geomFor = (
-      d: FloodCompareData,
-      detail: FeatureCollection<unknown> | null,
-    ) =>
-      detailZoom && detail && detail.features.length ? detail : levelFor(d);
-    setSrc("flood-a", clipFCVertical(geomFor(a, floodCmpDetailARef.current), lng, true));
-    setSrc("flood-b", clipFCVertical(geomFor(b, floodCmpDetailBRef.current), lng, false));
+  // Fine-hex ↔ detail hand-off for compare side A. While the viewport detail
+  // is absent (still fetching, or zoomed below the band) the FINE hex extends
+  // past FLOOD_DETAIL_MIN_ZOOM so the side never goes blank; once real detail
+  // has features the fine hex hands back to its normal band. Runs only when
+  // detail presence flips (event-driven) — NEVER per frame.
+  const applyFloodCmpDetailRange = useCallback((m: MaplibreMap) => {
+    const fine = FLOOD_HEX_LEVELS.find((l) => l.key === "fine");
+    if (!fine) return;
+    const hasDetail = Boolean(floodCmpDetailARef.current?.features.length);
+    const maxZoom = hasDetail ? fine.maxZoom : 24;
+    ["flood-a-fine-fill", "flood-a-fine-line"].forEach((id) => {
+      if (m.getLayer(id)) m.setLayerZoomRange(id, fine.minZoom, maxZoom);
+    });
   }, []);
 
   // (Re)install every custom source + layer, then re-feed the current scenario
@@ -380,9 +277,9 @@ export function useMorphismMap({
   const installLayers = useCallback(
     (m: MaplibreMap) => {
       const palette = readMapPalette();
-      // Per-year compare colours (resolved fresh so they follow the theme).
+      // Side-A compare colour (resolved fresh so it follows the theme). Side B's
+      // colour is resolved by the overlay-map hook.
       const floodColorA = readCssColor(FLOOD_COMPARE_SIDES.a.cssVar);
-      const floodColorB = readCssColor(FLOOD_COMPARE_SIDES.b.cssVar);
 
       // addLayer is guarded so a re-install (theme swap) never throws on a
       // layer that somehow survived; sources guarded the same way.
@@ -459,39 +356,58 @@ export function useMorphismMap({
         });
       });
 
-      // ── Flood year-compare layers (own sources so both years show at once) ──
-      // Year A = info-blue, Year B = secondary-purple. Hidden until a compare
-      // scenario feeds them via setFloodCompare.
-      if (!m.getSource("flood-a"))
-        m.addSource("flood-a", { type: "geojson", data: EMPTY });
-      if (!m.getSource("flood-b"))
-        m.addSource("flood-b", { type: "geojson", data: EMPTY });
+      // ── Flood year-compare layers (side A on the MAIN map only) ─────────────
+      // Side A = info-blue hex LODs + viewport detail, banded by minzoom/maxzoom
+      // exactly like the single-date view — data is fed ONCE per session, so
+      // zooming/dragging never re-uploads geometry. Side B is rendered by the
+      // swipe overlay map (use-flood-compare-overlay) and revealed by pure CSS
+      // clipping — it has NO layers here.
+      FLOOD_HEX_LEVELS.forEach((lvl) => {
+        const src = `flood-a-${lvl.key}`;
+        if (!m.getSource(src)) m.addSource(src, { type: "geojson", data: EMPTY });
+        addLayer({
+          id: `${src}-fill`,
+          type: "fill",
+          source: src,
+          minzoom: lvl.minZoom,
+          maxzoom: lvl.maxZoom,
+          paint: {
+            "fill-color": floodColorA,
+            "fill-opacity": 0.32,
+            "fill-outline-color": floodColorA,
+          },
+          layout: { visibility: "none" },
+        });
+        addLayer({
+          id: `${src}-line`,
+          type: "line",
+          source: src,
+          minzoom: lvl.minZoom,
+          maxzoom: lvl.maxZoom,
+          paint: {
+            "line-color": floodColorA,
+            "line-width": lvl.lineWidth,
+            "line-opacity": 0.6,
+          },
+          layout: { visibility: "none" },
+        });
+      });
+      if (!m.getSource("flood-a-detail"))
+        m.addSource("flood-a-detail", { type: "geojson", data: EMPTY });
       addLayer({
-        id: "flood-a-fill",
+        id: "flood-a-detail-fill",
         type: "fill",
-        source: "flood-a",
+        source: "flood-a-detail",
+        minzoom: FLOOD_DETAIL_MIN_ZOOM,
         paint: { "fill-color": floodColorA, "fill-opacity": 0.32 },
         layout: { visibility: "none" },
       });
       addLayer({
-        id: "flood-a-line",
+        id: "flood-a-detail-line",
         type: "line",
-        source: "flood-a",
-        paint: { "line-color": floodColorA, "line-width": 1.6, "line-opacity": 0.95 },
-        layout: { visibility: "none" },
-      });
-      addLayer({
-        id: "flood-b-fill",
-        type: "fill",
-        source: "flood-b",
-        paint: { "fill-color": floodColorB, "fill-opacity": 0.4 },
-        layout: { visibility: "none" },
-      });
-      addLayer({
-        id: "flood-b-line",
-        type: "line",
-        source: "flood-b",
-        paint: { "line-color": floodColorB, "line-width": 1.6, "line-opacity": 0.95 },
+        source: "flood-a-detail",
+        minzoom: FLOOD_DETAIL_MIN_ZOOM,
+        paint: { "line-color": floodColorA, "line-width": 1.2, "line-opacity": 0.9 },
         layout: { visibility: "none" },
       });
       addLayer({
@@ -682,10 +598,7 @@ export function useMorphismMap({
         "flood-hex-medium-line",
         "flood-hex-fine-line",
         "flood-line",
-        "flood-a-fill",
-        "flood-a-line",
-        "flood-b-fill",
-        "flood-b-line",
+        ...FLOOD_CMP_A_LAYERS,
         "buffer-line",
         "buffer-center",
         "hospitals",
@@ -711,6 +624,12 @@ export function useMorphismMap({
       FLOOD_HEX_LEVELS.forEach((lvl) =>
         setData(m, `flood-hex-${lvl.key}`, floodOverviewRef.current?.[lvl.key] ?? EMPTY),
       );
+      // Compare side A data survives a theme style swap too.
+      FLOOD_HEX_LEVELS.forEach((lvl) =>
+        setData(m, `flood-a-${lvl.key}`, floodCmpARef.current?.[lvl.key] ?? EMPTY),
+      );
+      setData(m, "flood-a-detail", floodCmpDetailARef.current ?? EMPTY);
+      applyFloodCmpDetailRange(m);
       setData(m, "agg", {
         type: "FeatureCollection",
         features: (aggRef.current ?? []).map((p) => ({
@@ -738,9 +657,7 @@ export function useMorphismMap({
         if (m.getLayer(id))
           m.setLayoutProperty(id, "visibility", on ? "visible" : "none");
       };
-      ["flood-a-fill", "flood-a-line", "flood-b-fill", "flood-b-line"].forEach(
-        (id) => setVis(id, cmp),
-      );
+      FLOOD_CMP_A_LAYERS.forEach((id) => setVis(id, cmp));
       setVis("flood", cmp ? false : layersRef.current.flood.visible);
       setVis("flood-line", cmp ? false : layersRef.current.flood.visible);
       // Overview hexes follow the flood toggle too (active only for date
@@ -761,11 +678,9 @@ export function useMorphismMap({
             layersRef.current.buffer.visible ? "visible" : "none",
           );
       });
-      // Re-feed the clipped per-year data (no-op when not in compare mode).
-      applyFloodClip();
       applyZoomGating();
     },
-    [applyZoomGating, applyFloodClip],
+    [applyZoomGating, applyFloodCmpDetailRange],
   );
 
   // ── init (client only, dynamic import keeps maplibre out of SSR) ──
@@ -933,16 +848,6 @@ export function useMorphismMap({
     };
   }, [ready, applyZoomGating]);
 
-  // ── re-clip the per-year flood layers whenever the camera moves ──
-  useEffect(() => {
-    const m = mapRef.current;
-    if (!m || !ready) return;
-    m.on("move", applyFloodClip);
-    return () => {
-      m.off("move", applyFloodClip);
-    };
-  }, [ready, applyFloodClip]);
-
   // ── sync layer data ──
   useEffect(() => {
     dataRef.current = data;
@@ -1076,15 +981,14 @@ export function useMorphismMap({
     [],
   );
 
-  // Flood year-compare: feed year A (blue) + year B (purple) as their own
-  // colour-coded layers on the main map, each clipped to its side of the
-  // divider. Pass (null, null) to leave compare and restore the single flood
-  // layer.
+  // Flood year-compare: feed side A's hex LODs ONCE into their banded sources
+  // (side B is fed to the overlay map by the view). Pass null to leave compare
+  // and restore the single flood layer. NO per-frame work happens after this —
+  // zoom picks the LOD via minzoom/maxzoom, the divider is CSS-only.
   const setFloodCompare = useCallback(
-    (a: FloodCompareData | null, b: FloodCompareData | null) => {
+    (a: FloodCompareData | null) => {
       floodCmpARef.current = a;
-      floodCmpBRef.current = b;
-      floodCmpActiveRef.current = Boolean(a && b);
+      floodCmpActiveRef.current = Boolean(a);
       const m = mapRef.current;
       if (!m) return;
       const cmp = floodCmpActiveRef.current;
@@ -1092,43 +996,40 @@ export function useMorphismMap({
         if (m.getLayer(id))
           m.setLayoutProperty(id, "visibility", on ? "visible" : "none");
       };
-      ["flood-a-fill", "flood-a-line", "flood-b-fill", "flood-b-line"].forEach(
-        (id) => setVis(id, cmp),
+      FLOOD_HEX_LEVELS.forEach((lvl) =>
+        setData(m, `flood-a-${lvl.key}`, a?.[lvl.key] ?? EMPTY),
       );
-      // Hide the single flood layer during compare; restore it afterwards.
+      if (!cmp) {
+        floodCmpDetailARef.current = null;
+        setData(m, "flood-a-detail", EMPTY);
+      }
+      FLOOD_CMP_A_LAYERS.forEach((id) => setVis(id, cmp));
+      // Hide the single flood layer (detail + hex overview) during compare;
+      // restore it afterwards.
       setVis("flood", cmp ? false : layersRef.current.flood.visible);
       setVis("flood-line", cmp ? false : layersRef.current.flood.visible);
-      if (cmp) applyFloodClip();
-      else {
-        floodCmpDetailARef.current = null;
-        floodCmpDetailBRef.current = null;
-        setData(m, "flood-a", EMPTY);
-        setData(m, "flood-b", EMPTY);
-      }
+      const overviewOn =
+        !cmp && layersRef.current.flood.visible && floodOverviewActiveRef.current;
+      FLOOD_HEX_LEVELS.forEach((lvl) => {
+        setVis(`flood-hex-${lvl.key}-fill`, overviewOn);
+        setVis(`flood-hex-${lvl.key}-line`, overviewOn);
+      });
+      applyFloodCmpDetailRange(m);
     },
-    [applyFloodClip],
+    [applyFloodCmpDetailRange],
   );
 
-  // Feed the high-zoom viewport detail for both sides (or clear with null,null).
+  // Feed (or clear) side A's high-zoom viewport detail. setData runs here only
+  // — i.e. once per debounced moveend fetch — never during divider dragging.
   const setFloodCompareDetail = useCallback(
-    (
-      a: FeatureCollection<unknown> | null,
-      b: FeatureCollection<unknown> | null,
-    ) => {
+    (a: FeatureCollection<unknown> | null) => {
       floodCmpDetailARef.current = a;
-      floodCmpDetailBRef.current = b;
-      applyFloodClip();
+      const m = mapRef.current;
+      if (!m) return;
+      setData(m, "flood-a-detail", a ?? EMPTY);
+      applyFloodCmpDetailRange(m);
     },
-    [applyFloodClip],
-  );
-
-  // Move the compare divider (0–100 % from the left) and re-clip in real time.
-  const setFloodCompareClip = useCallback(
-    (pct: number) => {
-      floodClipRef.current = Math.max(0, Math.min(100, pct));
-      applyFloodClip();
-    },
-    [applyFloodClip],
+    [applyFloodCmpDetailRange],
   );
 
   // Set the real province polygons to draw (pass null/empty to clear).
@@ -1194,7 +1095,6 @@ export function useMorphismMap({
     setBoundaries,
     setBufferCenters,
     setFloodCompare,
-    setFloodCompareClip,
     setFloodCompareDetail,
     setDistricts,
     setSubdistricts,

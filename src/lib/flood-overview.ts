@@ -19,6 +19,14 @@ import type { FeatureCollection, Geometry, Position } from "@/types";
 export const FLOOD_DETAIL_MIN_ZOOM = 6.8;
 
 /**
+ * Start FEEDING the compare detail sources this early, so MapLibre has already
+ * tiled the polygons by the time the camera crosses FLOOD_DETAIL_MIN_ZOOM. The
+ * layers' `minzoom` still gates what's VISIBLE — prefetching never changes what
+ * is displayed before the real threshold.
+ */
+export const FLOOD_DETAIL_PREFETCH_ZOOM = 6.0;
+
+/**
  * Hex resolution bands. `[minZoom, maxZoom)` are used directly as the MapLibre
  * layer zoom ranges (maxZoom exclusive) so exactly ONE resolution is visible at
  * any zoom — no gaps, no overlap, no doubled fills.

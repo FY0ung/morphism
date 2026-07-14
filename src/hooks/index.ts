@@ -6,5 +6,6 @@ export { useChatResizer } from "./use-chat-resizer";
 export { useAiAssistant } from "./use-ai-assistant";
 export { useMorphismMap } from "./use-morphism-map";
 export type { FloodCompareData } from "./use-morphism-map";
-export { useFloodSwipe } from "./use-flood-swipe";
+export { useFloodSwipe, clampClip } from "./use-flood-swipe";
+export { useFloodCompareOverlay } from "./use-flood-compare-overlay";
 export { useAdminHierarchy } from "./use-admin-hierarchy";

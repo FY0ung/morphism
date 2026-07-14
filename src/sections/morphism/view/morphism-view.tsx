@@ -7,6 +7,7 @@ import {
   useAdminHierarchy,
   useAiAssistant,
   useChatResizer,
+  useFloodCompareOverlay,
   useFloodSwipe,
   useMapLayers,
   useMorphismMap,
@@ -14,11 +15,20 @@ import {
 } from "@/hooks";
 import {
   getFloodAreas,
-  getFloodDetailInBBox,
   getFloodOverviewAsset,
   getProvinceBoundaries,
   getHospitals,
 } from "@/lib/api";
+import {
+  buildFloodDetailIndex,
+  bboxContains,
+  padBBox,
+  sliceFloodDetail,
+  FLOOD_VIEWPORT_MAX_VERTICES,
+  FLOOD_VIEWPORT_PREFETCH_MAX_VERTICES,
+  type BBoxTuple,
+  type FloodDetailIndex,
+} from "@/lib/flood-viewport";
 import { endpoint } from "@/configs/endpoint";
 import { cn } from "@/lib/utils";
 import type {
@@ -58,6 +68,7 @@ import {
   buildFloodSampleIndex,
   createFloodHexOverview,
   FLOOD_DETAIL_MIN_ZOOM,
+  FLOOD_DETAIL_PREFETCH_ZOOM,
   type FloodHexOverview,
 } from "@/lib/flood-overview";
 import {
@@ -159,10 +170,19 @@ const MorphismView = () => {
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Flood swipe-compare: which two years. Both years are drawn + clipped per-side
-  // directly on the main map (setFloodCompare / setFloodCompareClip); this state
-  // only tracks the active years.
+  // Flood swipe-compare: which two years. Side A is drawn on the main map
+  // (setFloodCompare); side B is drawn on a display-only OVERLAY map that the
+  // divider reveals with pure CSS clip-path (useFloodCompareOverlay).
   const [swipe, setSwipe] = useState<SwipeCompareState | null>(null);
+  // Side B's hex LODs — null until the compare fetch resolves.
+  const [swipeB, setSwipeB] = useState<FloodCompareData | null>(null);
+  // Wrapper of the overlay map — the divider writes clip-path on this node.
+  const overlayWrapRef = useRef<HTMLDivElement | null>(null);
+  // Per-feature bbox indexes over each side's ALREADY-LOADED full detail
+  // (built once at compare open). High-zoom detail is sliced from these in
+  // memory — never fetched from the slow bbox proxy (measured 15–22 s/side).
+  const cmpDetailIdxARef = useRef<FloodDetailIndex | null>(null);
+  const cmpDetailIdxBRef = useRef<FloodDetailIndex | null>(null);
 
   // ── Scene-level undo/redo ────────────────────────────────────────────────
   // The layer-visibility stack (useMapLayers) only rewinds WHICH layers are on —
@@ -252,7 +272,6 @@ const MorphismView = () => {
     setBoundaries,
     setBufferCenters,
     setFloodCompare,
-    setFloodCompareClip,
     setFloodCompareDetail,
     setDistricts,
     setSubdistricts,
@@ -263,6 +282,17 @@ const MorphismView = () => {
     theme: resolvedTheme,
     hospitalPopupHtml,
   });
+
+  // Swipe-compare overlay map (side B). Created once per compare session,
+  // camera-synced one-way from the main map, destroyed on close — the canvas
+  // count is 1 normally and exactly 2 while comparing.
+  const { overlayContainerRef, overlayReady, setOverlayDetail } =
+    useFloodCompareOverlay({
+      mainMap: map,
+      active: swipe !== null,
+      data: swipeB,
+      theme: resolvedTheme,
+    });
 
   // Scope for the zoom-driven admin hierarchy: `mode` = "aggregate" (scenario
   // supplies province counts) or "points" (derive counts from the shown points);
@@ -511,36 +541,67 @@ const MorphismView = () => {
         controller.signal.aborted || requestId !== compareRequestIdRef.current;
       const since = (t0: number) => Math.round(performance.now() - t0);
 
-      // Load ONE side: fetch its live extent, measure the real area, and reduce
-      // it to hex LODs for low/mid zoom. The raw detail is measured then dropped
+      // Load ONE side: fetch its live extent to measure the real area + bbox,
+      // and take the hex LODs from the pre-baked CDN overview asset when
+      // available (tiny, no client-side derivation) — deriving from the full
+      // geometry is only the fallback. The raw detail is measured then dropped
       // (high-zoom detail comes from the viewport fetch, memory-safe for any
-      // dataset size). One shared index feeds every hex level.
+      // dataset size).
       const loadSide = async (
         date: string,
-      ): Promise<{ km2: number; data: FloodCompareData; bbox: BBox } | null> => {
+      ): Promise<{
+        km2: number;
+        data: FloodCompareData;
+        bbox: BBox;
+        detailIndex: FloodDetailIndex;
+      } | null> => {
         const resp = await getFloodAreas(date, controller.signal);
         if (!resp.features.length) return null;
         const bbox = bboxOf(resp);
         if (!bbox) return null;
-        const idx = buildFloodSampleIndex(resp);
-        return {
-          km2: areaKm2(resp),
-          data: {
+        let data: FloodCompareData | null = null;
+        if (endpoint.flood.assetBase) {
+          try {
+            data = await getFloodOverviewAsset(date, controller.signal);
+          } catch {
+            data = null; // fall through to detail-derived hexes
+          }
+        }
+        if (
+          !data ||
+          !(
+            data.coarse.features.length ||
+            data.medium.features.length ||
+            data.fine.features.length
+          )
+        ) {
+          const idx = buildFloodSampleIndex(resp);
+          data = {
             coarse: createFloodHexOverview(idx, 45, "coarse"),
             medium: createFloodHexOverview(idx, 24, "medium"),
             fine: createFloodHexOverview(idx, 12, "fine"),
-          },
+          };
+        }
+        // Index the loaded detail by feature bbox ONCE — high-zoom viewport
+        // slices come from this in memory (no bbox proxy round-trips). The
+        // feature objects are shared with the getFloodAreas cache, not copied.
+        return {
+          km2: areaKm2(resp),
+          data,
           bbox,
+          detailIndex: buildFloodDetailIndex(resp),
         };
       };
 
       report?.done(0, 0); // resolve_periods — instant
       const tLoad = performance.now();
       try {
-        // Sequential so only ONE full dataset is parsed at a time (lower peak).
-        const A = await loadSide(sel.dateA);
-        if (stale()) return { ok: true };
-        const B = await loadSide(sel.dateB);
+        // BOTH sides in parallel — one slow side never blocks the other's
+        // download/parse, so the compare is ready in max(A, B), not A + B.
+        const [A, B] = await Promise.all([
+          loadSide(sel.dateA),
+          loadSide(sel.dateB),
+        ]);
         if (stale()) return { ok: true };
         if (!A || !B) {
           report?.fail(1, since(tLoad));
@@ -549,7 +610,13 @@ const MorphismView = () => {
         report?.done(1, since(tLoad));
 
         const tMeasure = performance.now();
-        setFloodCompare(A.data, B.data);
+        // Detail indexes first, so the viewport-slice effect can fire as soon
+        // as the data commits below.
+        cmpDetailIdxARef.current = A.detailIndex;
+        cmpDetailIdxBRef.current = B.detailIndex;
+        // Side A → main map (banded sources, fed once); side B → overlay map.
+        setFloodCompare(A.data);
+        setSwipeB(B.data);
         report?.done(2, since(tMeasure));
 
         // Frame the union of both sides' extents.
@@ -575,70 +642,85 @@ const MorphismView = () => {
     [setFloodCompare, fitBoundsAndWait, showToast, t],
   );
 
+  // Committed divider position. During a drag the position lives in a ref and
+  // is applied as CSS clip-path inside SwipeCompare (rAF); this state updates
+  // ONCE on pointerup / keyboard step — never per pointermove.
   const { clip, setClip } = useFloodSwipe({ active: swipe !== null });
 
-  // Drive the real-time per-year clip on the map from the divider position.
+  // High-zoom REAL detail for compare — sliced LOCALLY from the per-feature
+  // bbox indexes built at compare open (the full detail is already in memory;
+  // the old bbox-proxy round-trip measured 15–22 s/side). Slicing is pure
+  // arithmetic (~ms), debounced on moveend, and starts at the PREFETCH band
+  // (zoom ≥ 6.0) so the polygons are tiled before they become visible at 6.8
+  // (each detail layer's minzoom gates visibility). Zoom out/in re-slices from
+  // memory — instant, no request, no re-parse.
   useEffect(() => {
-    if (swipe) setFloodCompareClip(clip);
-  }, [clip, swipe, setFloodCompareClip]);
-
-  // High-zoom REAL detail for compare: when zoomed past the hex→detail band,
-  // fetch BOTH sides' live extent cropped to the CURRENT viewport (server-side
-  // bbox) and draw the real polygons — the SAME LOD boundary as the single-date
-  // view. Debounced on move; only the viewport is loaded so any dataset size is
-  // memory-safe. Below the band it clears back to hex.
-  useEffect(() => {
-    if (!swipe || !map) return;
-    const { dateA, dateB } = swipe;
+    if (!swipe || !map || !swipeB) return;
     let debounce: ReturnType<typeof setTimeout> | undefined;
-    let abort: AbortController | null = null;
+    // Last slice's padded bbox: pans inside it need no re-slice (unless the
+    // feature cap truncated the slice).
+    let sliced: BBoxTuple | null = null;
+    let slicedTruncated = false;
     const update = () => {
-      if (map.getZoom() < FLOOD_DETAIL_MIN_ZOOM) {
-        setFloodCompareDetail(null, null);
-        return;
-      }
+      const zoom = map.getZoom();
+      if (zoom < FLOOD_DETAIL_PREFETCH_ZOOM) return; // hex bands cover this
+      const idxA = cmpDetailIdxARef.current;
+      const idxB = cmpDetailIdxBRef.current;
+      if (!idxA || !idxB) return;
       const b = map.getBounds();
-      const bbox: [number, number, number, number] = [
+      const view: BBoxTuple = [
         b.getWest(),
         b.getSouth(),
         b.getEast(),
         b.getNorth(),
       ];
-      abort?.abort();
-      abort = new AbortController();
-      const sig = abort.signal;
-      void Promise.all([
-        getFloodDetailInBBox(dateA, bbox, sig),
-        getFloodDetailInBBox(dateB, bbox, sig),
-      ])
-        .then(([a, bfc]) => {
-          if (sig.aborted) return;
-          // TEMP diagnostic — confirms the upstream bbox crop returns features
-          // (remove once high-zoom compare detail is verified in the browser).
-          console.log("[compare-detail]", {
-            zoom: map.getZoom().toFixed(1),
-            a: a.features.length,
-            b: bfc.features.length,
-          });
-          setFloodCompareDetail(a, bfc);
-        })
-        .catch((err) => {
-          if (!sig.aborted) console.warn("[compare-detail] fetch failed", err);
+      if (sliced && !slicedTruncated && bboxContains(sliced, view)) return;
+      const padded = padBBox(view);
+      // The vertex budget bounds MapLibre's worker cost per setData. The
+      // prefetch band (invisible warm-up) gets a tighter budget than the real
+      // detail band.
+      const budget =
+        zoom >= FLOOD_DETAIL_MIN_ZOOM
+          ? FLOOD_VIEWPORT_MAX_VERTICES
+          : FLOOD_VIEWPORT_PREFETCH_MAX_VERTICES;
+      const t0 = performance.now();
+      const a = sliceFloodDetail(idxA, padded, budget);
+      const bSlice = sliceFloodDetail(idxB, padded, budget);
+      sliced = padded;
+      slicedTruncated = a.truncated || bSlice.truncated;
+      setFloodCompareDetail(a.fc);
+      setOverlayDetail(bSlice.fc);
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[compare-detail] slice", {
+          zoom: map.getZoom().toFixed(1),
+          a: a.fc.features.length,
+          b: bSlice.fc.features.length,
+          truncated: slicedTruncated,
+          ms: Math.round(performance.now() - t0),
         });
+      }
     };
     const onMove = () => {
       if (debounce) clearTimeout(debounce);
-      debounce = setTimeout(update, 300);
+      debounce = setTimeout(update, 200);
     };
     map.on("moveend", onMove);
     update();
     return () => {
       map.off("moveend", onMove);
       if (debounce) clearTimeout(debounce);
-      abort?.abort();
-      setFloodCompareDetail(null, null);
+      setFloodCompareDetail(null);
+      setOverlayDetail(null);
     };
-  }, [swipe, map, setFloodCompareDetail]);
+  }, [swipe, swipeB, map, setFloodCompareDetail, setOverlayDetail]);
+
+  // Detail indexes live exactly as long as the compare session.
+  useEffect(() => {
+    if (swipe === null) {
+      cmpDetailIdxARef.current = null;
+      cmpDetailIdxBRef.current = null;
+    }
+  }, [swipe]);
 
   // Build + draw the region-coloured province polygons for an aggregate scenario
   // from the loaded province GeoJSON. Draw-only (no camera) → returns the polygon
@@ -730,7 +812,8 @@ const MorphismView = () => {
     setAdmScope(null);
     pendingAggScenarioRef.current = null;
     setSwipe(null);
-    setFloodCompare(null, null);
+    setSwipeB(null);
+    setFloodCompare(null);
     setTimeActive(false);
     setTimeLabel(null);
     applyExact([]);
@@ -785,6 +868,10 @@ const MorphismView = () => {
         applyExact(["flood"]);
         setTimeActive(Boolean(scenario.timeActive));
         setTimeLabel(scenario.timeActive ? scenario.timeLabel ?? null : null);
+        // Clear the previous session's side-B data BEFORE opening the new one,
+        // so the overlay can never flash a stale year while the fetch runs.
+        setSwipeB(null);
+        setFloodCompare(null);
         setSwipe(sel);
         return runFloodCompare(sel, report);
       }
@@ -806,7 +893,8 @@ const MorphismView = () => {
         setAdmScope(null);
         pendingAggScenarioRef.current = null;
         setSwipe(null);
-        setFloodCompare(null, null);
+        setSwipeB(null);
+        setFloodCompare(null);
         // Reflect the observation date/range in the time-filter pill (real
         // snapshots set timeActive; empty-date scenarios leave it cleared).
         setTimeActive(Boolean(scenario.timeActive));
@@ -1010,7 +1098,8 @@ const MorphismView = () => {
       // Any non-swipe scenario closes an open compare (swipe is handled earlier
       // via its own async branch and never reaches here).
       setSwipe(null);
-      setFloodCompare(null, null);
+      setSwipeB(null);
+      setFloodCompare(null);
       showToast(t("morphism.toast.applied"));
     },
     [
@@ -1123,6 +1212,23 @@ const MorphismView = () => {
         aria-label={t("morphism.workspaceAria")}
       >
         <MapCanvas containerRef={containerRef} ariaLabel={t("morphism.mapAria")} />
+
+        {/* Swipe-compare overlay map (side B), revealed right of the divider by
+            CSS clip-path — written DIRECTLY on this wrapper by SwipeCompare's
+            rAF drag path, so it must never appear as a React inline style.
+            Display-only (pointer-events-none): the main map keeps all gestures. */}
+        {swipe !== null && (
+          <div
+            ref={overlayWrapRef}
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute inset-0 z-10",
+              !overlayReady && "invisible",
+            )}
+          >
+            <div ref={overlayContainerRef} className="absolute inset-0 size-full" />
+          </div>
+        )}
 
         {/* Cover the basemap's blank-tile flash while a flood scenario loads +
             the camera flies to the new extent. */}
@@ -1262,8 +1368,10 @@ const MorphismView = () => {
 
         <SwipeCompare
           active={swipe !== null}
+          ready={overlayReady}
           labelA={swipe?.labelA ?? ""}
           labelB={swipe?.labelB ?? ""}
+          overlayRef={overlayWrapRef}
           clip={clip}
           onClipChange={setClip}
           onClose={() => {
@@ -1271,7 +1379,8 @@ const MorphismView = () => {
             compareAbortRef.current?.abort();
             compareRequestIdRef.current += 1;
             setSwipe(null);
-            setFloodCompare(null, null);
+            setSwipeB(null);
+            setFloodCompare(null);
           }}
         />
 

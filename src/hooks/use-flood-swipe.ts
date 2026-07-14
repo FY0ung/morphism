@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 
 // Clip stays inside [4, 96] so a sliver of each side is always visible — mirrors
-// the reference `setSwipe` clamp.
+// the reference `setSwipe` clamp. Exported so the divider's rAF drag path (which
+// bypasses React state) clamps with the SAME rule.
 const MIN = 4;
 const MAX = 96;
-const clamp = (n: number) => Math.max(MIN, Math.min(MAX, n));
+export const clampClip = (n: number) => Math.max(MIN, Math.min(MAX, n));
+const clamp = clampClip;
 
 interface UseFloodSwipeArgs {
   /** Whether the compare overlay is on. */
