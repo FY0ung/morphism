@@ -1,12 +1,20 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useTheme } from "next-themes";
 import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/icons";
 import { IconButton } from "@/components/actionable/IconButtons";
 import { useMounted } from "@/hooks";
-import { cn } from "@/lib/utils";
+import { cn, localStorageGetItem, localStorageSetItem } from "@/lib/utils";
+import dayjs from "dayjs";
+import { motion, useReducedMotion } from "motion/react";
 import type { LayoutDirection } from "@/types";
+
+const LANG_OPTIONS = [
+  { value: "en", label: "EN" },
+  { value: "th", label: "TH" },
+] as const;
 
 interface Props {
   open: boolean;
@@ -38,8 +46,112 @@ const THEME_CARDS: ThemeCard[] = [
   },
 ];
 
-const optionClass =
-  "flex min-h-10 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-2 text-[13px] transition-colors hover:bg-background-default-light";
+/**
+ * Accessible animated radio: a native (visually-hidden) input drives the ring
+ * fill + a spring-like dot that scales in on check. Token-only colours; honours
+ * keyboard focus and prefers-reduced-motion.
+ */
+function AnimatedRadio({
+  name,
+  checked,
+  onChange,
+  label,
+}: {
+  name: string;
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+}) {
+  const reduce = useReducedMotion();
+  return (
+    <label className="flex min-h-10 cursor-pointer items-center gap-2.5 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-background-default-light">
+      <input
+        type="radio"
+        name={name}
+        checked={checked}
+        onChange={onChange}
+        className="peer sr-only"
+      />
+      <span
+        className={cn(
+          "relative grid size-5 flex-none place-items-center rounded-full border-2 transition-colors duration-200",
+          checked
+            ? "border-transparent bg-background-primary-default"
+            : "border-border-primary-default bg-background-default-default",
+          "peer-focus-visible:ring-2 peer-focus-visible:ring-border-primary-default peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background-default-default",
+        )}
+      >
+        {/* Inner dot: elastic spring pop on select (overshoots, then settles). */}
+        <motion.span
+          initial={false}
+          animate={{ scale: checked ? 1 : 0 }}
+          transition={
+            reduce
+              ? { duration: 0 }
+              : { type: "spring", stiffness: 600, damping: 15 }
+          }
+          className="size-2 rounded-full bg-background-default-default"
+        />
+      </span>
+      <span className="text-[13px] text-text-default-default">{label}</span>
+    </label>
+  );
+}
+
+/**
+ * Segmented language switch: a full-width pill with a spring-slid highlight
+ * (shared `layoutId`) that glides under the active option. Token-only colours.
+ */
+function LanguageSwitch({
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  value: "en" | "th";
+  onChange: (lng: "en" | "th") => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={ariaLabel}
+      className="mb-3 inline-flex rounded-full border border-border-default-default bg-background-default-light p-1"
+    >
+      {LANG_OPTIONS.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(opt.value)}
+            className="relative rounded-full px-4 py-1.5 text-center text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-border-primary-default"
+          >
+            {active && (
+              <motion.span
+                layoutId="langSwitchKnob"
+                transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                className="absolute inset-0 rounded-full bg-background-primary-default shadow-sm"
+                aria-hidden
+              />
+            )}
+            <span
+              className={cn(
+                "relative z-10 transition-colors",
+                active
+                  ? "text-text-primary-default"
+                  : "text-text-default-onlight",
+              )}
+            >
+              {opt.label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /** Illustrative, non-interactive theme preview thumbnail (token-only). */
 function ThemeThumb({ value }: { value: ThemeCard["value"] }) {
@@ -75,14 +187,44 @@ export default function SettingsPopover({
   direction,
   onChange,
 }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { resolvedTheme, setTheme } = useTheme();
   const mounted = useMounted();
   // Default to dark for SSR/first paint to avoid hydration mismatch.
   const activeTheme = mounted ? resolvedTheme ?? "dark" : "dark";
+  // Language matches SSR/first paint ("en") until mounted, then reflects i18n.
+  const activeLang = mounted && i18n.language === "th" ? "th" : "en";
+
+  const changeLanguage = (lng: "en" | "th") => {
+    void i18n.changeLanguage(lng);
+    dayjs.locale(lng === "th" ? "th" : "en");
+    const stored = localStorageGetItem("storage");
+    const base = stored && typeof stored === "object" ? stored : {};
+    localStorageSetItem("storage", { ...base, lang: lng });
+  };
+
+  // Close on outside click or Escape (only while open).
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        onToggle();
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onToggle();
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, onToggle]);
 
   return (
-    <>
+    <div ref={rootRef} className="contents">
       <IconButton
         variant="filled"
         color="default"
@@ -160,26 +302,36 @@ export default function SettingsPopover({
           })}
         </div>
 
+        {/* Language */}
+        <h3 className="mb-2 mt-3 text-xs font-semibold uppercase tracking-wider text-text-default-onlight">
+          {t("morphism.language.title")}
+        </h3>
+        <LanguageSwitch
+          value={activeLang}
+          onChange={changeLanguage}
+          ariaLabel={t("morphism.language.title")}
+        />
+
         {/* Layout direction */}
         <h3 className="mb-2 mt-3 text-xs font-semibold uppercase tracking-wider text-text-default-onlight">
           {t("morphism.settingsTitle")}
         </h3>
-        {DIR_OPTIONS.map((opt) => (
-          <label key={opt.value} className={optionClass}>
-            <input
-              type="radio"
+        <div
+          role="radiogroup"
+          aria-label={t("morphism.settingsTitle")}
+          className="flex flex-col gap-0.5"
+        >
+          {DIR_OPTIONS.map((opt) => (
+            <AnimatedRadio
+              key={opt.value}
               name="layoutDir"
-              value={opt.value}
               checked={direction === opt.value}
               onChange={() => onChange(opt.value)}
-              className="size-4 accent-background-primary-default"
+              label={t(opt.labelKey as "morphism.dir.ltr")}
             />
-            <span className="text-text-default-default">
-              {t(opt.labelKey as "morphism.dir.ltr")}
-            </span>
-          </label>
-        ))}
+          ))}
+        </div>
       </div>
-    </>
+    </div>
   );
 }

@@ -70,6 +70,9 @@
       "buffer": "รัศมีวิเคราะห์ (buffer)",
       "boundaries": "ขอบเขตการปกครอง"
     },
+    "language": {
+      "title": "ภาษา"
+    },
     "dir": {
       "ltr": "แชทซ้าย · แผนที่ขวา (ค่าเริ่มต้น)",
       "rtl": "แผนที่ซ้าย · แชทขวา"
@@ -115,6 +118,105 @@
       "error": "ไม่สามารถโหลดข้อมูลพื้นที่น้ำท่วมได้ในขณะนี้",
       "emptyDate": "ไม่พบข้อมูลพื้นที่น้ำท่วมวันที่ {{date}}",
       "emptyMonth": "ไม่พบข้อมูลพื้นที่น้ำท่วมเดือน {{month}}"
+    },
+    "scenario": {
+      "place": {
+        "currentArea": "พื้นที่ที่แสดงอยู่"
+      },
+      "steps": {
+        "catalog": "search_catalog('hospital') → OpenStreetMap"
+      },
+      "hosp": {
+        "interim": "กำลังหาโรงพยาบาลใน{{where}}…",
+        "interim24": "กำลังหาโรงพยาบาลที่เปิด 24 ชั่วโมงใน{{where}}…",
+        "resolveNone": "ไม่ระบุ (ใช้พื้นที่ปัจจุบัน)",
+        "stepResolve": "resolve_location() → {{target}}",
+        "stepFilter": "filter(province='{{province}}')",
+        "stepFilter24": "attribute_filter(hours='24/7')",
+        "result": "แสดงโรงพยาบาลใน{{province}}บนแผนที่แล้ว",
+        "result24": "แสดงโรงพยาบาลที่เปิด 24 ชั่วโมงใน{{province}}บนแผนที่แล้ว",
+        "resultNoProvince": "แสดงโรงพยาบาลบนแผนที่แล้ว",
+        "result24NoProvince": "แสดงโรงพยาบาลที่เปิด 24 ชั่วโมงบนแผนที่แล้ว"
+      },
+      "songkran": {
+        "timeLabel": "13 – 15 เม.ย. 2568 (สงกรานต์)",
+        "interim": "เข้าใจแล้ว — \"ช่วงสงกรานต์\" คือ 13–15 เมษายน กำลังกรองข้อมูล…",
+        "step1": "ตีความ 'สงกรานต์' → 13–15 เม.ย. 2568",
+        "step2": "set_time_range(2025-04-13 → 04-15)",
+        "step3": "toggle_layer('flood_events', visible)",
+        "result": "แสดงขอบเขตน้ำท่วมจากข้อมูลสำรวจ — ซูมออกเห็นภาพรวม, ซูมเข้าเห็นขอบเขตจริง"
+      },
+      "buffer": {
+        "timeLabel": "2 – 8 มิ.ย. 2569 (สัปดาห์ที่แล้ว)",
+        "interim": "งานนี้ต้องวิเคราะห์หลายขั้น — ขอไล่ทีละขั้นนะครับ",
+        "step1": "set_time_range(สัปดาห์ที่แล้ว)",
+        "step2": "query: โหลดขอบเขตน้ำท่วม",
+        "step3": "buffer(flood, 5 km) + จุดศูนย์กลาง",
+        "step4": "spatial_query(hospitals ∩ buffer)",
+        "result": "พบโรงพยาบาลในรัศมีเสี่ยง {{count}} แห่ง (จุดสีแดง) — ประโยคเดียว ไม่ต้องใช้เครื่องมือ GIS"
+      },
+      "province": {
+        "interim": "กำลังนับโรงพยาบาลในจังหวัด{{province}}…",
+        "step1": "geocode('{{province}}') → ศูนย์กลางจังหวัด",
+        "step2": "aggregate(province='{{province}}') → นับรวม",
+        "result": "จังหวัด{{province}}มีโรงพยาบาลรัฐ {{count}} แห่ง — ตัวเลขรวมแสดงบนแผนที่"
+      },
+      "region": {
+        "interim": "กำลังรวบรวมโรงพยาบาลใน{{region}} ({{count}} จังหวัด)…",
+        "step1": "resolve_region('{{region}}') → {{count}} จังหวัด",
+        "step3": "group_by(province) ใน{{region}}",
+        "result": "{{region}}มีโรงพยาบาลรัฐรวม {{count}} แห่ง ใน {{provinces}} จังหวัด — ตัวเลขรวมแสดงในแต่ละจังหวัดบนแผนที่",
+        "chartTitle": "จำนวนโรงพยาบาลรัฐต่อจังหวัด — {{region}}"
+      },
+      "compare": {
+        "interim": "กำลังเปรียบเทียบโรงพยาบาลรัฐ: {{regionA}} · {{regionB}}…",
+        "step1": "resolve_entities() → {{count}} กลุ่ม",
+        "step3": "group_by(region) → จัดกลุ่มแยกรายภาค (คงสีประจำภาค)",
+        "result": "เปรียบเทียบจำนวนโรงพยาบาลรัฐรายภาคแล้ว — {{regionA}} vs {{regionB}} (ดูโดนัทด้านล่าง)",
+        "chartTitle": "เปรียบเทียบจำนวนโรงพยาบาลรัฐ — {{regionA}} vs {{regionB}}",
+        "centerLabel": "รวม (แห่ง)"
+      },
+      "nation": {
+        "interim": "กำลังรวบรวมโรงพยาบาลรัฐทั่วประเทศ…",
+        "step1": "resolve_scope() → ทั้งประเทศ (77 จังหวัด)",
+        "step2": "search_catalog('hospital') → ข้อมูลสถานพยาบาลรัฐ",
+        "step3": "group_by(region) → จัดกลุ่มราย 6 ภาค",
+        "result": "ทั่วประเทศมีโรงพยาบาลรัฐรวม {{count}} แห่ง ใน 77 จังหวัด — ตัวเลขรวมรายภาคบนแผนที่",
+        "chartTitle": "จำนวนโรงพยาบาลรัฐรายภาค — ทั่วประเทศ"
+      },
+      "floodCompare": {
+        "interim": "กำลังวิเคราะห์การเปลี่ยนแปลงของน้ำท่วม {{yearLabelA}} เทียบ {{yearLabelB}}…",
+        "step1": "resolve_periods() → {{yearLabelA}} · {{yearLabelB}}",
+        "step2": "load flood_extent({{yearA}}) + flood_extent({{yearB}})",
+        "step3": "zonal_stats(flood) → พื้นที่/เขตที่ได้รับผลกระทบ",
+        "resultIntro": "เปิดโหมดเทียบน้ำท่วมซ้าย–ขวาให้แล้วครับ ลากตัวแบ่งกลางแผนที่เพื่อเทียบสองปี",
+        "resultLeft": "{{yearLabel}} (ซ้าย): พื้นที่น้ำท่วม {{rai}} ไร่ · เขตที่ได้รับผลกระทบ ~{{districts}} เขต · ประชากรประมาณ {{pop}} คน",
+        "resultRight": "{{yearLabel}} (ขวา): พื้นที่น้ำท่วม {{rai}} ไร่ · เขตที่ได้รับผลกระทบ ~{{districts}} เขต · ประชากรประมาณ {{pop}} คน",
+        "resultSummary": "สรุป: พื้นที่น้ำท่วม{{areaDir}} {{pct}}% ({{sign}}{{raiDelta}} ไร่) · เขตที่ได้รับผลกระทบ{{distDir}} {{distDelta}} เขต",
+        "increase": "เพิ่มขึ้น",
+        "decrease": "ลดลง",
+        "chartAreaTitle": "พื้นที่น้ำท่วมรายปี — {{yearLabelA}} vs {{yearLabelB}}",
+        "chartAreaCenter": "ไร่ (รวม)",
+        "chartDistrictTitle": "เขตที่ได้รับผลกระทบ — {{yearLabelA}} vs {{yearLabelB}}"
+      },
+      "flood": {
+        "searching": "กำลังค้นหาข้อมูลพื้นที่น้ำท่วม…",
+        "searchingDate": "กำลังค้นหาข้อมูลพื้นที่น้ำท่วมวันที่ {{date}}…",
+        "searchingMonth": "กำลังค้นหาข้อมูลพื้นที่น้ำท่วมเดือน{{month}}…",
+        "searchingYear": "กำลังค้นหาข้อมูลพื้นที่น้ำท่วม{{year}}…",
+        "stepResolve": "resolve_date('{{query}}') → {{date}}",
+        "stepLoad": "load_flood_overview(date='{{date}}')",
+        "stepAddLayer": "add_overview_layer('flood_hex')",
+        "stepFit": "fit_bounds('flood_extent')",
+        "emptyYear": "ไม่พบข้อมูลพื้นที่น้ำท่วม{{year}}",
+        "foundDateLine1": "พบข้อมูลพื้นที่น้ำท่วมวันที่ {{date}} แล้ว",
+        "foundDateLine2": "ขณะนี้กำลังแสดงขอบเขตพื้นที่น้ำท่วมจากข้อมูลภาพถ่ายดาวเทียมบนแผนที่",
+        "foundMonthLine1": "พบข้อมูลพื้นที่น้ำท่วมในเดือน{{month}}",
+        "foundYearLine1": "พบข้อมูลพื้นที่น้ำท่วม{{year}}",
+        "snapshotLine": "ชุดข้อมูลที่มีอยู่ในระบบเป็นภาพสถานการณ์วันที่ {{date}}",
+        "yearLabel": "ปี {{year}}"
+      },
+      "unknown": "ยังไม่เข้าใจคำถามนี้ ลองถามเกี่ยวกับโรงพยาบาล น้ำท่วม หรือพื้นที่ที่ต้องการดูบนแผนที่อีกครั้งครับ"
     }
   }
 }

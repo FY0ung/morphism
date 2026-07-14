@@ -70,6 +70,9 @@
       "buffer": "Analysis radius (buffer)",
       "boundaries": "Administrative boundaries"
     },
+    "language": {
+      "title": "Language"
+    },
     "dir": {
       "ltr": "Chat left · Map right (default)",
       "rtl": "Map left · Chat right"
@@ -115,6 +118,105 @@
       "error": "Couldn't load flood areas right now",
       "emptyDate": "No flood data for {{date}}",
       "emptyMonth": "No flood data for {{month}}"
+    },
+    "scenario": {
+      "place": {
+        "currentArea": "the current area"
+      },
+      "steps": {
+        "catalog": "search_catalog('hospital') → OpenStreetMap"
+      },
+      "hosp": {
+        "interim": "Searching for hospitals in {{where}}…",
+        "interim24": "Searching for 24-hour hospitals in {{where}}…",
+        "resolveNone": "unspecified (current view)",
+        "stepResolve": "resolve_location() → {{target}}",
+        "stepFilter": "filter(province='{{province}}')",
+        "stepFilter24": "attribute_filter(hours='24/7')",
+        "result": "Showed hospitals in {{province}} on the map.",
+        "result24": "Showed 24-hour hospitals in {{province}} on the map.",
+        "resultNoProvince": "Showed hospitals on the map.",
+        "result24NoProvince": "Showed 24-hour hospitals on the map."
+      },
+      "songkran": {
+        "timeLabel": "13–15 Apr 2025 (Songkran)",
+        "interim": "Got it — \"Songkran\" means 13–15 April. Filtering the data…",
+        "step1": "interpret 'Songkran' → 13–15 Apr 2025",
+        "step2": "set_time_range(2025-04-13 → 04-15)",
+        "step3": "toggle_layer('flood_events', visible)",
+        "result": "Showing the flood extent from survey data — zoom out for the overview, zoom in for the actual boundary."
+      },
+      "buffer": {
+        "timeLabel": "2–8 Jun 2026 (last week)",
+        "interim": "This needs several analysis steps — let me go through them one at a time.",
+        "step1": "set_time_range(last week)",
+        "step2": "query: load flood extent",
+        "step3": "buffer(flood, 5 km) + center point",
+        "step4": "spatial_query(hospitals ∩ buffer)",
+        "result": "Found {{count}} hospitals in the at-risk radius (red dots) — one sentence, no GIS tooling required."
+      },
+      "province": {
+        "interim": "Counting hospitals in {{province}} province…",
+        "step1": "geocode('{{province}}') → province center",
+        "step2": "aggregate(province='{{province}}') → total",
+        "result": "{{province}} province has {{count}} public hospitals — the total is shown on the map."
+      },
+      "region": {
+        "interim": "Gathering hospitals in {{region}} ({{count}} provinces)…",
+        "step1": "resolve_region('{{region}}') → {{count}} provinces",
+        "step3": "group_by(province) in {{region}}",
+        "result": "{{region}} has {{count}} public hospitals across {{provinces}} provinces — per-province totals are shown on the map.",
+        "chartTitle": "Public hospitals per province — {{region}}"
+      },
+      "compare": {
+        "interim": "Comparing public hospitals: {{regionA}} · {{regionB}}…",
+        "step1": "resolve_entities() → {{count}} groups",
+        "step3": "group_by(region) → group by region (keeping each region's colour)",
+        "result": "Compared public hospital counts by region — {{regionA}} vs {{regionB}} (see the donut below).",
+        "chartTitle": "Public hospital counts — {{regionA}} vs {{regionB}}",
+        "centerLabel": "Total (hospitals)"
+      },
+      "nation": {
+        "interim": "Gathering public hospitals nationwide…",
+        "step1": "resolve_scope() → nationwide (77 provinces)",
+        "step2": "search_catalog('hospital') → public healthcare facilities",
+        "step3": "group_by(region) → group by the 6 regions",
+        "result": "Nationwide there are {{count}} public hospitals across 77 provinces — regional totals are shown on the map.",
+        "chartTitle": "Public hospitals by region — nationwide"
+      },
+      "floodCompare": {
+        "interim": "Analysing the change in flooding, {{yearLabelA}} vs {{yearLabelB}}…",
+        "step1": "resolve_periods() → {{yearLabelA}} · {{yearLabelB}}",
+        "step2": "load flood_extent({{yearA}}) + flood_extent({{yearB}})",
+        "step3": "zonal_stats(flood) → affected area / districts",
+        "resultIntro": "I've opened the left–right flood comparison. Drag the divider on the map to compare the two years.",
+        "resultLeft": "{{yearLabel}} (left): flooded area {{rai}} rai · ~{{districts}} affected districts · about {{pop}} people",
+        "resultRight": "{{yearLabel}} (right): flooded area {{rai}} rai · ~{{districts}} affected districts · about {{pop}} people",
+        "resultSummary": "Summary: flooded area {{areaDir}} {{pct}}% ({{sign}}{{raiDelta}} rai) · affected districts {{distDir}} by {{distDelta}}",
+        "increase": "increased",
+        "decrease": "decreased",
+        "chartAreaTitle": "Flooded area by year — {{yearLabelA}} vs {{yearLabelB}}",
+        "chartAreaCenter": "Rai (total)",
+        "chartDistrictTitle": "Affected districts — {{yearLabelA}} vs {{yearLabelB}}"
+      },
+      "flood": {
+        "searching": "Searching for flood-area data…",
+        "searchingDate": "Searching for flood-area data for {{date}}…",
+        "searchingMonth": "Searching for flood-area data for {{month}}…",
+        "searchingYear": "Searching for flood-area data for {{year}}…",
+        "stepResolve": "resolve_date('{{query}}') → {{date}}",
+        "stepLoad": "load_flood_overview(date='{{date}}')",
+        "stepAddLayer": "add_overview_layer('flood_hex')",
+        "stepFit": "fit_bounds('flood_extent')",
+        "emptyYear": "No flood-area data for {{year}}",
+        "foundDateLine1": "Found flood-area data for {{date}}.",
+        "foundDateLine2": "Now showing the flood-area boundary from satellite imagery on the map.",
+        "foundMonthLine1": "Found flood-area data for {{month}}.",
+        "foundYearLine1": "Found flood-area data for {{year}}.",
+        "snapshotLine": "The dataset available in the system is a snapshot from {{date}}.",
+        "yearLabel": "Year {{year}}"
+      },
+      "unknown": "I didn't quite understand that. Try asking about hospitals, flooding, or an area you'd like to see on the map."
     }
   }
 }

@@ -47,7 +47,7 @@ import {
   REGION_TOKEN_VAR,
   REGION_DEFAULT_TOKEN,
   provinceRegion,
-  COMPARE_LEGEND,
+  compareLegend as buildCompareLegend,
 } from "../const";
 import { readCssColor } from "@/lib/map-tokens";
 import { bboxOf, distanceKm, normalizeProvinceName } from "@/lib/geo";
@@ -89,7 +89,9 @@ type FloodScenarioStatus =
   | "error";
 
 const MorphismView = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  // Active scenario display language (default English; the other is Thai).
+  const lang: "en" | "th" = i18n.language === "th" ? "th" : "en";
   // Basemap follows the UI theme (next-themes). Undefined on first paint → the
   // hook defaults to dark, matching the app default (no hydration mismatch).
   const { resolvedTheme } = useTheme();
@@ -593,7 +595,7 @@ const MorphismView = () => {
         // per-region counts only); normal aggregate reveals points at z≥11.
         applyExact(isCmp ? [] : ["hospitals"]);
         setCompareMode(isCmp);
-        setCompareLegend(isCmp ? COMPARE_LEGEND : null);
+        setCompareLegend(isCmp ? buildCompareLegend(lang) : null);
         setAggregate(scenario.aggregate ?? []);
         setAggregateState(scenario.aggregate ?? null);
         // Region-compare draws region boundaries only (no ADM2/ADM3 drill-down).
@@ -803,11 +805,20 @@ const MorphismView = () => {
       setFloodOverview,
       showToast,
       t,
+      lang,
     ],
   );
 
+  // Resolve queries with the CURRENT language so scenario text (interim, result,
+  // steps, chart labels, dates) renders in the active i18n language and
+  // re-resolves when the user switches languages.
+  const resolve = useCallback(
+    (text: string) => resolveScenario(text, t, lang),
+    [t, lang],
+  );
+
   const { messages, ask, pending } = useAiAssistant({
-    resolve: resolveScenario,
+    resolve,
     onScenario,
   });
 
@@ -888,10 +899,7 @@ const MorphismView = () => {
               open={settingsOpen}
               onToggle={() => setSettingsOpen((v) => !v)}
               direction={direction}
-              onChange={(dir) => {
-                setDirection(dir);
-                setSettingsOpen(false);
-              }}
+              onChange={(dir) => setDirection(dir)}
             />
 
             <Tag variant="filled" color="default" size="small" className="text-xs border border-border-default-default pointer-events-none">

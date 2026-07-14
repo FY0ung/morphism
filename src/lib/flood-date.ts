@@ -42,6 +42,22 @@ export const THAI_MONTHS_FULL = [
   "ธันวาคม",
 ] as const;
 
+/** Canonical full English month names, index 0 = January (month 1). */
+export const EN_MONTHS_FULL = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
+
 // Every recognised spelling → month number (1–12). Longer / more specific forms
 // are matched first (see MONTH_PATTERNS) so "ตุลาคม" wins over "ตุลา".
 const MONTH_ALIASES: Record<string, number> = {};
@@ -74,6 +90,17 @@ export function toGregorianYear(year: number): number {
   return year >= 2400 ? year - 543 : year;
 }
 
+/**
+ * Expand a 2-digit year to 4 digits. The dataset spans B.E. 2565–2568 (last two
+ * digits 65–68) and C.E. 2022–2025 (22–25) — non-overlapping ranges — so ≥ 50 is
+ * read as a short Buddhist-Era year (68 → 2568) and < 50 as a short Gregorian
+ * year (25 → 2025). 4-digit years pass through unchanged.
+ */
+function normalizeYear(year: number): number {
+  if (year >= 100) return year;
+  return year >= 50 ? 2500 + year : 2000 + year;
+}
+
 /** Gregorian → Buddhist-Era (for display). */
 export function toBuddhistYear(yearCE: number): number {
   return yearCE + 543;
@@ -94,23 +121,27 @@ export function resolveFloodDate(raw: string): FloodDateResolution {
   const text = raw.trim();
   const lower = text.toLowerCase();
 
-  // 1. ISO yyyy-mm-dd.
-  const iso = lower.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (iso) {
-    const year = toGregorianYear(Number(iso[1]));
-    const month = Number(iso[2]);
-    const day = Number(iso[3]);
+  // 1. Year-first: yyyy-mm-dd, yyyy/mm/dd, yyyy.mm.dd, or compact yyyymmdd
+  //    (Buddhist-Era years normalised, e.g. 2568-10-13 or 25681013).
+  const ymd =
+    lower.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/) ??
+    lower.match(/(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)/);
+  if (ymd) {
+    const year = toGregorianYear(Number(ymd[1]));
+    const month = Number(ymd[2]);
+    const day = Number(ymd[3]);
     if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
       return buildExact(year, month, day);
     }
   }
 
-  // 2. Numeric dd/mm/yyyy (or d/m/yyyy), separators / . -
-  const dmy = lower.match(/(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})/);
+  // 2. Day-first numeric: dd/mm/yyyy, dd-mm-yyyy, dd.mm.yyyy — 2- or 4-digit year
+  //    (e.g. 13/10/2568, 13-10-68, 13.10.25).
+  const dmy = lower.match(/(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})/);
   if (dmy) {
     const day = Number(dmy[1]);
     const month = Number(dmy[2]);
-    const year = toGregorianYear(Number(dmy[3]));
+    const year = toGregorianYear(normalizeYear(Number(dmy[3])));
     if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
       return buildExact(year, month, day);
     }
@@ -171,6 +202,28 @@ export function formatThaiDate(iso: string): string {
 export function formatThaiMonth(ym: string): string {
   const [y, m] = ym.split("-").map(Number);
   return `${THAI_MONTHS_FULL[m - 1]} ${toBuddhistYear(y)}`;
+}
+
+/**
+ * Locale-aware date label.
+ *   th → "13 ตุลาคม 2568" (Buddhist Era)
+ *   en → "13 October 2025" (Gregorian)
+ */
+export function formatDate(iso: string, lang: "en" | "th"): string {
+  if (lang === "th") return formatThaiDate(iso);
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${d} ${EN_MONTHS_FULL[m - 1]} ${y}`;
+}
+
+/**
+ * Locale-aware month label.
+ *   th → "ตุลาคม 2568" (Buddhist Era)
+ *   en → "October 2025" (Gregorian)
+ */
+export function formatMonth(ym: string, lang: "en" | "th"): string {
+  if (lang === "th") return formatThaiMonth(ym);
+  const [y, m] = ym.split("-").map(Number);
+  return `${EN_MONTHS_FULL[m - 1]} ${y}`;
 }
 
 /**

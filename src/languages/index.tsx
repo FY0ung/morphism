@@ -16,10 +16,10 @@ import LocalizedFormat from "dayjs/plugin/localizedFormat";
 dayjs.extend(buddhistEra);
 dayjs.extend(LocalizedFormat);
 
-// Stable language for SSR and the FIRST client render (Thai-first project).
+// Stable language for SSR and the FIRST client render (English by default).
 // Server and first client paint must agree, so this must not depend on
 // localStorage — that is read after mount in the effect below.
-const DEFAULT_LANG = "th";
+const DEFAULT_LANG = "en";
 
 // Initialise i18n exactly once, at module load — never during render. Calling
 // init() (or changeLanguage) while rendering makes react-i18next update its
@@ -50,7 +50,7 @@ const LanguageProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     const stored = localStorageGetItem("storage");
     const lang = stored && typeof stored === "object" ? stored.lang : undefined;
-    const next = lang === "en" ? "en" : "th";
+    const next = lang === "th" ? "th" : "en"; // default English; honour saved Thai
     if (i18n.language !== next) void i18n.changeLanguage(next);
     dayjs.locale(next === "th" ? "th" : "en-gb");
   }, []);

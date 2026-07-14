@@ -37,3 +37,13 @@ export function localStorageGetItem(key: string, defaultValue = "") {
     return null;
   }
 }
+
+/** Persist a JSON-serialisable value under `key` (no-op if storage unavailable). */
+export function localStorageSetItem(key: string, value: unknown) {
+  if (!localStorageAvailable()) return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* quota / serialisation errors are non-fatal */
+  }
+}
