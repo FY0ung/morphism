@@ -13,9 +13,11 @@ import {
 } from "@/hooks";
 import {
   getFloodAreas,
+  getFloodOverviewAsset,
   getProvinceBoundaries,
   getHospitals,
 } from "@/lib/api";
+import { endpoint } from "@/configs/endpoint";
 import { cn } from "@/lib/utils";
 import type {
   BBox,
@@ -49,7 +51,7 @@ import {
 } from "../const";
 import { readCssColor } from "@/lib/map-tokens";
 import { bboxOf, distanceKm, normalizeProvinceName } from "@/lib/geo";
-import { buildFloodHexLevels } from "@/lib/flood-overview";
+import { buildFloodHexLevels, type FloodHexOverview } from "@/lib/flood-overview";
 import {
   ChatPanel,
   HistoryControls,
@@ -347,38 +349,70 @@ const MorphismView = () => {
       // Clear a stale empty/error badge WITHOUT clearing the existing layer.
       setFloodStatus("loading-data");
       try {
-        // Step 1 · load — fetch the ONE complete FeatureCollection (server
-        // paginates in parallel + caches; client caches by date + dedups).
         const tLoad = performance.now();
-        const resp = await getFloodAreas(meta.date, controller.signal);
+
+        // Phase 3b · overview-first. Start the (large) detail download NOW, in the
+        // background, and meanwhile fetch the tiny pre-baked hex overview from the
+        // CDN so the flood layer paints INSTANTLY at the current (wide) zoom while
+        // the detail streams in — no blank wait. If the asset is unavailable we
+        // derive the overview from the detail instead (prior behaviour).
+        const detailPromise = getFloodAreas(meta.date, controller.signal);
+        let overview: FloodHexOverview | null = null;
+        if (endpoint.flood.assetBase) {
+          try {
+            overview = await getFloodOverviewAsset(meta.date, controller.signal);
+          } catch {
+            overview = null; // fall through to detail-derived overview
+          }
+          if (stale()) return { ok: true };
+          const hexCount = overview
+            ? overview.coarse.features.length +
+              overview.medium.features.length +
+              overview.fine.features.length
+            : 0;
+          if (overview && hexCount > 0) {
+            // Step 1 · load_flood_overview + Step 2 · add_overview_layer('flood_hex').
+            setFloodStatus("updating-map");
+            setFloodOverview(overview);
+            applyExact(["flood"]);
+            report?.done(1, since(tLoad));
+            report?.done(2, since(tLoad));
+          } else {
+            overview = null;
+          }
+        }
+
+        // Detail = SINGLE SOURCE OF TRUTH for the success/empty gate + exact
+        // bounds (already in flight from above).
+        const resp = await detailPromise;
         if (stale()) return { ok: true };
 
         // TRUTHFUL success gate: no features → the step FAILS (not green) and the
         // chat shows the empty message; the previous valid map is kept.
         const bb = resp.features.length ? bboxOf(resp) : null;
         if (!resp.features.length || !bb) {
-          report?.fail(1, since(tLoad));
+          report?.fail(overview ? 3 : 1, since(tLoad));
           setFloodStatus("empty");
+          if (overview) setFloodOverview(null); // roll back the optimistic hexes
           return { ok: false, message: emptyMsg };
         }
-        report?.done(1, since(tLoad));
 
-        // Hex LODs from the ACTUAL loaded geometry (single source of truth).
-        const hex = buildFloodHexLevels(resp);
+        if (!overview) {
+          // No CDN overview → derive the hex LODs from the actual geometry.
+          report?.done(1, since(tLoad));
+          setFloodStatus("updating-map");
+          setFloodOverview(buildFloodHexLevels(resp));
+          report?.done(2, since(tLoad));
+        }
 
-        // Step 2 · add_overview_layer — atomic commit: detail source + hex LODs +
-        // reveal the flood layer, all from the same FC.
-        const tAdd = performance.now();
-        setFloodStatus("updating-map");
+        // Commit the detailed geometry (renders at zoom ≥ FLOOD_DETAIL_MIN_ZOOM).
         setFloodAreas(resp);
         setFloodPartial(Boolean(resp.partial));
         applyExact(["flood"]);
         commitFloodExtent(resp);
-        setFloodOverview(hex);
-        report?.done(2, since(tAdd));
 
-        // Step 3 · fit_bounds — one fitBounds to the ACTUAL flood bounds, WAIT
-        // for moveend. (Never focuses Bangkok.)
+        // Step 3 · fit_bounds — detail is loaded, so the target zoom shows real
+        // polygons (never a blank frame). One fitBounds, WAIT for moveend.
         setFloodStatus("moving-camera");
         const tCam = performance.now();
         const key = `${meta.scenarioId}:${bb.join(",")}`;

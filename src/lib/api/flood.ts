@@ -1,6 +1,7 @@
 import { endpoint } from "@/configs/endpoint";
 import { emptyFC } from "@/types";
 import type { FloodApiResponse, FloodFC } from "@/types";
+import type { FloodHexOverview } from "@/lib/flood-overview";
 import { ApiError } from "./client";
 
 /**
@@ -19,9 +20,28 @@ const floodCache = new Map<string, FloodApiResponse>();
 const floodInflight = new Map<string, Promise<FloodApiResponse>>();
 
 /**
- * CLIENT: fetch the complete flood FeatureCollection for one observation date
- * through the same-origin proxy (/api/flood?date=YYYY-MM-DD). This ONE payload
- * is the single source of truth the map + chat both read.
+ * Fetch a gzip-compressed JSON asset and decompress it in the browser. R2's
+ * public endpoint stores raw gzip bytes WITHOUT a `Content-Encoding` header (so
+ * the browser won't auto-decode), hence we pipe the body through the native
+ * `DecompressionStream("gzip")` ourselves. Throws on any HTTP or decode failure
+ * so the caller can fall back to the same-origin proxy.
+ */
+async function fetchGzipJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new ApiError(res.status, `asset ${res.status}`);
+  if (typeof DecompressionStream === "undefined" || !res.body) {
+    throw new ApiError(0, "DecompressionStream unsupported");
+  }
+  const stream = res.body.pipeThrough(new DecompressionStream("gzip"));
+  return (await new Response(stream).json()) as T;
+}
+
+/**
+ * CLIENT: fetch the complete flood FeatureCollection for one observation date.
+ * Prefers the pre-generated asset on the R2 CDN (fast, edge-cached, no upstream
+ * pagination); on ANY failure (not configured, network, empty, decode) it falls
+ * back to the same-origin `/api/flood` proxy. Either way this ONE payload is the
+ * single source of truth the map + chat both read.
  */
 export async function getFloodAreas(
   date: string,
@@ -32,14 +52,48 @@ export async function getFloodAreas(
   const pending = floodInflight.get(date);
   if (pending) return pending;
 
-  const req = fetch(endpoint.flood.byDate(date), { signal })
-    .then(async (res) => {
-      if (!res.ok) throw new ApiError(res.status, `flood proxy failed: ${res.status}`);
-      const data = (await res.json()) as FloodApiResponse;
+  const load = async (): Promise<FloodApiResponse> => {
+    if (endpoint.flood.assetBase) {
+      try {
+        const data = await fetchGzipJson<FloodApiResponse>(
+          endpoint.flood.assetDetail(date),
+          signal,
+        );
+        if (data?.features?.length) return data;
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") throw err;
+        // otherwise fall through to the proxy
+      }
+    }
+    const res = await fetch(endpoint.flood.byDate(date), { signal });
+    if (!res.ok) throw new ApiError(res.status, `flood proxy failed: ${res.status}`);
+    return (await res.json()) as FloodApiResponse;
+  };
+
+  const req = load()
+    .then((data) => {
       floodCache.set(date, data);
       return data;
     })
     .finally(() => floodInflight.delete(date));
   floodInflight.set(date, req);
   return req;
+}
+
+/**
+ * CLIENT: fetch the pre-baked hex overview (3 LODs) for one date from the R2 CDN.
+ * Tiny (a few KB gzipped) vs the full detail — used to paint the flood layer
+ * instantly at low zoom while the detail streams in. Returns null when no asset
+ * base is configured; throws on HTTP/decode failure so the caller can derive the
+ * overview from the detail instead.
+ */
+export async function getFloodOverviewAsset(
+  date: string,
+  signal?: AbortSignal,
+): Promise<FloodHexOverview | null> {
+  if (!endpoint.flood.assetBase) return null;
+  return fetchGzipJson<FloodHexOverview>(
+    endpoint.flood.assetOverview(date),
+    signal,
+  );
 }
