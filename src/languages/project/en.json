@@ -117,7 +117,8 @@
     "flood": {
       "error": "Couldn't load flood areas right now",
       "emptyDate": "No flood data for {{date}}",
-      "emptyMonth": "No flood data for {{month}}"
+      "emptyMonth": "No flood data for {{month}}",
+      "loadingMap": "Loading flood map…"
     },
     "scenario": {
       "place": {

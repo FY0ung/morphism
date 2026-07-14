@@ -59,6 +59,7 @@ import {
   LayerPanel,
   Legend,
   MapCanvas,
+  MapLoadingOverlay,
   MapTopBar,
   Resizer,
   SettingsPopover,
@@ -966,6 +967,16 @@ const MorphismView = () => {
         aria-label={t("morphism.workspaceAria")}
       >
         <MapCanvas containerRef={containerRef} ariaLabel={t("morphism.mapAria")} />
+
+        {/* Cover the basemap's blank-tile flash while a flood scenario loads +
+            the camera flies to the new extent. */}
+        <MapLoadingOverlay
+          active={
+            floodStatus === "loading-data" ||
+            floodStatus === "updating-map" ||
+            floodStatus === "moving-camera"
+          }
+        />
 
         <MapTopBar
           timeActive={timeActive}
