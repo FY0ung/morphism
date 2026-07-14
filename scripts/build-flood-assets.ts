@@ -34,7 +34,29 @@ import type { FloodApiResponse } from "@/types";
 
 // Dates to publish. Add a future date here (and its date→collection mapping in
 // src/app/api/flood/route.ts), then re-run — or pass dates as CLI args.
-const DEFAULT_DATES = ["2025-10-13", "2022-10-14"] as const;
+const DEFAULT_DATES = [
+  "2025-10-19",
+  "2025-10-17",
+  "2025-10-16",
+  "2025-10-15",
+  "2025-10-14",
+  "2025-10-13",
+  "2024-10-12",
+  "2024-10-10",
+  "2024-10-07",
+  "2024-10-05",
+  "2024-10-02",
+  "2023-10-20",
+  "2023-10-18",
+  "2023-10-12",
+  "2023-10-11",
+  "2023-10-10",
+  "2022-10-20",
+  "2022-10-18",
+  "2022-10-15",
+  "2022-10-14",
+  "2022-10-13",
+] as const;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const SOURCE_BASE = process.env.GENERATE_SOURCE_BASE ?? "http://localhost:3000";

@@ -736,15 +736,41 @@ const scnFloodCompare = (yearA: number, yearB: number): Scenario => {
 // Registered flood observation snapshots (each is an INDEPENDENT dataset; the
 // server route maps the date → its own Vallaris collection). Add a new date +
 // its month/year aliases here and drop its fixture in src/data/flood/<date>.json.
-const FLOOD_SNAPSHOTS = new Set<string>(["2025-10-13", "2022-10-14"]);
+const FLOOD_SNAPSHOTS = new Set<string>([
+  "2025-10-19",
+  "2025-10-17",
+  "2025-10-16",
+  "2025-10-15",
+  "2025-10-14",
+  "2025-10-13",
+  "2024-10-12",
+  "2024-10-10",
+  "2024-10-07",
+  "2024-10-05",
+  "2024-10-02",
+  "2023-10-20",
+  "2023-10-18",
+  "2023-10-12",
+  "2023-10-11",
+  "2023-10-10",
+  "2022-10-20",
+  "2022-10-18",
+  "2022-10-15",
+  "2022-10-14",
+  "2022-10-13",
+]);
 const FLOOD_SNAPSHOT_BY_MONTH: Record<string, string> = {
-  "2025-10": "2025-10-13",
-  "2022-10": "2022-10-14",
+  "2025-10": "2025-10-19", // latest snapshot in the month
+  "2024-10": "2024-10-12",
+  "2023-10": "2023-10-20",
+  "2022-10": "2022-10-20",
 };
 /** Gregorian year → the available observation snapshot for that year. */
 const FLOOD_SNAPSHOT_BY_YEAR: Record<string, string> = {
-  "2025": "2025-10-13",
-  "2022": "2022-10-14",
+  "2025": "2025-10-19", // latest snapshot in the year
+  "2024": "2024-10-12",
+  "2023": "2023-10-20",
+  "2022": "2022-10-20",
 };
 
 /**
