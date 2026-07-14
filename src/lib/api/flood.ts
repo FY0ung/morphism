@@ -1,6 +1,11 @@
 import { endpoint } from "@/configs/endpoint";
+import {
+  floodDatasetBase,
+  floodOverviewUrlByKey,
+  floodStatsUrl,
+} from "@/configs/flood-data";
 import { emptyFC } from "@/types";
-import type { FloodApiResponse, FloodFC } from "@/types";
+import type { FloodApiResponse, FloodFC, FloodStats } from "@/types";
 import type { FloodHexOverview } from "@/lib/flood-overview";
 import { ApiError } from "./client";
 
@@ -114,4 +119,37 @@ export async function getFloodOverviewAsset(
     endpoint.flood.assetOverview(date),
     signal,
   );
+}
+
+// ── PMTiles-era dataset artifacts (addressed by dataset KEY: a date or
+//    `year-<CE year>`), fetched from the dataset base. Both are tiny. ─────────
+
+const statsCache = new Map<string, FloodStats>();
+
+/**
+ * CLIENT: precomputed stats (bbox / flooded area / totals) for one dataset.
+ * Replaces downloading + measuring the complete GeoJSON in pmtiles mode.
+ * Returns null when no base is configured; throws on HTTP failure so the
+ * caller can fall back to the geojson flow.
+ */
+export async function getFloodStats(
+  key: string,
+  signal?: AbortSignal,
+): Promise<FloodStats | null> {
+  if (!floodDatasetBase()) return null;
+  const hit = statsCache.get(key);
+  if (hit) return hit;
+  const stats = await fetchGzipJson<FloodStats>(floodStatsUrl(key), signal);
+  statsCache.set(key, stats);
+  return stats;
+}
+
+/** CLIENT: hex overview by dataset KEY (covers year keys, which only exist on
+ *  the dataset base). Same payload shape as `getFloodOverviewAsset`. */
+export async function getFloodOverviewByKey(
+  key: string,
+  signal?: AbortSignal,
+): Promise<FloodHexOverview | null> {
+  if (!floodDatasetBase()) return null;
+  return fetchGzipJson<FloodHexOverview>(floodOverviewUrlByKey(key), signal);
 }

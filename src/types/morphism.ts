@@ -60,6 +60,11 @@ export interface ChatMessage {
    * so old replies follow the active EN/TH setting instead of freezing.
    */
   query?: string;
+  /**
+   * The swipe-compare selection this message applied (compare results only).
+   * Lets the result card re-open the comparison after the user closed it.
+   */
+  swipe?: SwipeCompare;
 }
 
 /** ทิศการจัดวางหน้าจอ */
@@ -80,6 +85,29 @@ export interface SwipeCompare {
   labelA: string;
   /** Right-side display label. */
   labelB: string;
+  /**
+   * Optional PMTiles dataset keys. A year query carries its annual-cumulative
+   * key (`year-2025`); a date query its date. The geojson fallback ignores
+   * these and uses `dateA`/`dateB` (a year then means its snapshot date).
+   */
+  keyA?: string;
+  keyB?: string;
+}
+
+/** Precomputed dataset stats (flood/<key>/stats.json.gz) — bbox, flooded area
+ *  and totals ready-made so the browser never processes the full GeoJSON. */
+export interface FloodStats {
+  version: 1;
+  key: string;
+  kind: "date" | "year";
+  dates: string[];
+  bbox: [number, number, number, number];
+  featureCount: number;
+  areaKm2: number;
+  areaRai: number;
+  tileMinZoom: number;
+  tileMaxZoom: number;
+  generatedAt: string;
 }
 
 /** กล้องแผนที่สำหรับ flyTo (ค่าพอร์ตตรงจาก HTML reference) */

@@ -10,12 +10,11 @@ import type {
   Position,
   FeatureCollection,
   HospitalFC,
-  BoundaryFC,
   ChartData,
 } from "@/types";
 import type { FloodScenarioMeta } from "@/types";
-import { FLOOD_SURVEY } from "./flood-survey";
 import { FLOOD_COMPARE_SIDES } from "@/configs/flood-compare";
+import { FLOOD_LATEST_DATA_YEAR, floodYearKey } from "@/configs/flood-data";
 import {
   resolveFloodDate,
   detectFloodMonth,
@@ -137,18 +136,16 @@ const FLOOD_RISK = countWhere(
   (r) => r[4] === "กรุงเทพมหานคร" && r[1] <= 100.55,
 );
 
-/* Flood analysis — deterministic geometry ported verbatim from the HTML
- * reference: the real FLOOD_SURVEY polygons, and TWO 5 km buffers around the
- * exact BUFFER_CENTERS_RAW centres. Hospitals are filtered (in the view) to
- * within 5 km of EITHER centre so only "at-risk" ones are shown. */
+/* Flood analysis — TWO 5 km buffers around the exact BUFFER_CENTERS_RAW
+ * centres (ported from the HTML reference). Hospitals are filtered (in the
+ * view) to within 5 km of EITHER centre so only "at-risk" ones are shown.
+ * NOTE: the flood layer itself has NO mock geometry — it renders only the real
+ * processed data flow (PMTiles / CDN assets / the /api/flood proxy). */
 export const FLOOD_ANALYSIS_CENTERS: Position[] = [
   [100.481, 13.784],
   [100.486, 13.745],
 ];
 export const FLOOD_ANALYSIS_RADIUS_KM = 5;
-
-// Real flood-survey polygons (blue). Imported from the ported data module.
-export const MOCK_FLOOD: FeatureCollection = FLOOD_SURVEY;
 
 /** One 5 km analysis buffer (green dashed circle) per centre. */
 export const MOCK_BUFFER: FeatureCollection = {
@@ -168,115 +165,6 @@ export const MOCK_BUFFER_CENTERS: FeatureCollection = {
     geometry: { type: "Point", coordinates: c },
     properties: { label: "ศูนย์กลางรัศมี" },
   })),
-};
-
-/* Deterministic per-year flood extent — ported from the HTML: the survey
- * polygons scaled about their centroid by a per-year severity factor. */
-function floodSeverity(year: number): number {
-  const table: Record<number, number> = {
-    2554: 1.9, 2564: 1.35, 2565: 1.15, 2566: 0.62,
-    2567: 0.8, 2568: 0.95, 2569: 1.0, 2570: 1.1,
-  };
-  return table[year] ?? 0.6 + (Math.abs(year) % 7) * 0.12;
-}
-
-function scaleFC(fc: FeatureCollection, k: number): FeatureCollection {
-  return {
-    type: "FeatureCollection",
-    features: fc.features.map((f) => {
-      const g = f.geometry;
-      if (g.type !== "Polygon") return f;
-      const ring = g.coordinates[0];
-      let cx = 0;
-      let cy = 0;
-      ring.forEach(([x, y]) => {
-        cx += x;
-        cy += y;
-      });
-      cx /= ring.length;
-      cy /= ring.length;
-      return {
-        type: "Feature" as const,
-        properties: f.properties,
-        geometry: {
-          type: "Polygon" as const,
-          coordinates: g.coordinates.map((r) =>
-            r.map(([x, y]) => [cx + (x - cx) * k, cy + (y - cy) * k] as Position),
-          ),
-        },
-      };
-    }),
-  };
-}
-
-/** Flood extent for a given B.E. year (deterministic, non-empty). */
-export function floodForYear(year: number): FeatureCollection {
-  return scaleFC(FLOOD_SURVEY, floodSeverity(year));
-}
-
-/**
- * Planar area (km²) of every Polygon in a FeatureCollection — shoelace on
- * lng/lat with a cos(lat) correction for longitude compression. Good enough for
- * the small metro extents here and deterministic (matches the HTML reference).
- */
-function polyAreaKm2(fc: FeatureCollection): number {
-  let total = 0;
-  for (const f of fc.features) {
-    const g = f.geometry;
-    if (g.type !== "Polygon") continue;
-    const ring = g.coordinates[0];
-    if (!ring || ring.length < 3) continue;
-    const latMean =
-      ((ring.reduce((s, [, y]) => s + y, 0) / ring.length) * Math.PI) / 180;
-    let sum = 0;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      sum += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
-    }
-    const areaDeg = Math.abs(sum) / 2;
-    total += areaDeg * 110.574 * (111.32 * Math.cos(latMean));
-  }
-  return total;
-}
-
-/** Deterministic per-year flood impact stats (area, ไร่, districts, population). */
-export function floodStatsForYear(year: number): {
-  fc: FeatureCollection;
-  areaKm2: number;
-  rai: number;
-  districts: number;
-  pop: number;
-} {
-  const fc = floodForYear(year);
-  const areaKm2 = polyAreaKm2(fc);
-  return {
-    fc,
-    areaKm2: Math.round(areaKm2),
-    rai: Math.round(areaKm2 * 625), // 1 km² = 625 ไร่
-    districts: Math.max(1, Math.round(areaKm2 / 95)),
-    pop: Math.round(areaKm2 * 820),
-  };
-}
-
-export const MOCK_BOUNDARIES: BoundaryFC = {
-  type: "FeatureCollection",
-  features: [
-    {
-      type: "Feature",
-      geometry: {
-        type: "Polygon",
-        coordinates: [
-          [
-            [100.44, 13.66],
-            [100.62, 13.66],
-            [100.62, 13.83],
-            [100.44, 13.83],
-            [100.44, 13.66],
-          ],
-        ],
-      },
-      properties: { name: "กรุงเทพมหานคร", level: "province", code: "10" },
-    },
-  ],
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -852,10 +740,13 @@ const scnNation = (t: TFunction, lang: Lang): Scenario => {
   };
 };
 
-/** One side of a compare: a resolved observation DATE + a display label. */
+/** One side of a compare: a resolved observation DATE + a display label.
+ *  `key` is the PMTiles dataset key (a date, or `year-<CE>` for the annual
+ *  cumulative dataset); the geojson fallback ignores it and uses `date`. */
 export interface CompareTarget {
   date: string;
   label: string;
+  key?: string;
 }
 
 /** Resolve one side of a compare (a date, month, or year) → a dated target. */
@@ -866,19 +757,30 @@ function compareTargetFor(
 ): CompareTarget | null {
   const r = resolveFloodDate(part);
   if (r.matchMode === "exact-date" && r.resolvedDate) {
-    return { date: r.resolvedDate, label: formatDate(r.resolvedDate, lang) };
+    return {
+      date: r.resolvedDate,
+      label: formatDate(r.resolvedDate, lang),
+      key: r.resolvedDate,
+    };
   }
   if (r.matchMode === "month" && r.resolvedMonth) {
     const d = FLOOD_SNAPSHOT_BY_MONTH[r.resolvedMonth];
-    if (d) return { date: d, label: formatMonth(r.resolvedMonth, lang) };
+    if (d)
+      return { date: d, label: formatMonth(r.resolvedMonth, lang), key: d };
   }
   if (r.matchMode === "year" && r.year != null) {
-    const d = FLOOD_SNAPSHOT_BY_YEAR[String(r.year)];
+    // A future year with no observations yet (e.g. B.E. 2569 -> CE 2026)
+    // clamps to the latest year that HAS data, and the label shows the year
+    // actually compared - never a fabricated dataset.
+    const year = Math.min(r.year, FLOOD_LATEST_DATA_YEAR);
+    const d = FLOOD_SNAPSHOT_BY_YEAR[String(year)];
     if (d) {
-      const shown = lang === "th" ? toBuddhistYear(r.year) : r.year;
+      const shown = lang === "th" ? toBuddhistYear(year) : year;
       return {
         date: d,
         label: t("morphism.scenario.flood.yearLabel", { year: String(shown) }),
+        // Year queries compare the ANNUAL CUMULATIVE dataset in pmtiles mode.
+        key: floodYearKey(year),
       };
     }
   }
@@ -990,7 +892,14 @@ const scnFloodCompare = (
   layers: ["flood"],
   timeActive: true,
   timeLabel: `${a.label} · ${b.label}`,
-  swipe: { dateA: a.date, dateB: b.date, labelA: a.label, labelB: b.label },
+  swipe: {
+    dateA: a.date,
+    dateB: b.date,
+    labelA: a.label,
+    labelB: b.label,
+    keyA: a.key,
+    keyB: b.key,
+  },
   interim: t("morphism.scenario.floodCompare.interim", {
     yearLabelA: a.label,
     yearLabelB: b.label,

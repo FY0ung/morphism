@@ -47,6 +47,7 @@ export type {
   ScenarioStep,
   Scenario,
   SwipeCompare,
+  FloodStats,
   FloodMatchMode,
   FloodScenarioMeta,
   ScenarioStepReporter,

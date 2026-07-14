@@ -2,7 +2,7 @@
 
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
-import type { ChatMessage } from "@/types";
+import type { ChatMessage, SwipeCompare } from "@/types";
 import MessageList from "./message-list";
 import SuggestionChips from "./suggestion-chips";
 import ChatInput from "./chat-input";
@@ -11,6 +11,10 @@ interface Props {
   messages: ChatMessage[];
   pending: boolean;
   onSend: (text: string) => void;
+  /** Re-open a closed swipe-compare from a compare result card. */
+  onReopenCompare?: (sel: SwipeCompare) => void;
+  /** The swipe-compare currently open on the map (null when closed). */
+  activeSwipe?: SwipeCompare | null;
   /** Layout sizing classes supplied by the shell (width / order / borders). */
   className?: string;
 }
@@ -20,6 +24,8 @@ export default function ChatPanel({
   messages,
   pending,
   onSend,
+  onReopenCompare,
+  activeSwipe,
   className,
 }: Props) {
   const { t } = useTranslation();
@@ -42,7 +48,11 @@ export default function ChatPanel({
         </h2>
       </header>
 
-      <MessageList messages={messages} />
+      <MessageList
+        messages={messages}
+        onReopenCompare={onReopenCompare}
+        activeSwipe={activeSwipe}
+      />
       <SuggestionChips onPick={onSend} disabled={pending} />
       <ChatInput onSend={onSend} disabled={pending} />
     </aside>

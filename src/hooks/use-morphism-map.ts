@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readMapPalette, readCssColor } from "@/lib/map-tokens";
 import { FLOOD_COMPARE_SIDES } from "@/configs/flood-compare";
+import { ensurePmtilesProtocol } from "@/lib/map/pmtiles";
 import {
   FLOOD_DETAIL_MIN_ZOOM,
   FLOOD_HEX_LEVELS,
@@ -77,6 +78,13 @@ const FLOOD_CMP_A_LAYERS = FLOOD_CMP_A_SOURCES.flatMap((s) => [
   `${s}-line`,
 ]);
 
+// PMTiles vector sources (stable ids, created once, re-pointed with setUrl —
+// never torn down per session). The source-layer name inside every archive.
+const PM_SOURCE_LAYER = "flood";
+const FLOOD_PM = "flood-pm"; // single-date detail
+const FLOOD_A_PM = "flood-a-pm"; // compare side A detail
+const pmLayerIds = (src: string) => [`${src}-fill`, `${src}-line`];
+
 // Single overview marker (z < 6) — the focused dataset's TOTAL count at its
 // count-weighted centroid. Mirrors the HTML `summaryFeature()`.
 function summaryFC(provinces: ProvinceCount[] | null): FeatureCollection {
@@ -150,6 +158,8 @@ export function useMorphismMap({
   // useAdminHierarchy hook. Kept in refs so they survive a theme style swap.
   const districtDataRef = useRef<FeatureCollection<unknown> | null>(null);
   const subdistrictDataRef = useRef<FeatureCollection<unknown> | null>(null);
+  // Manual "Administrative boundaries" layer data (real admin hierarchy).
+  const adminBoundariesRef = useRef<FeatureCollection<unknown> | null>(null);
   const districtActiveRef = useRef(false);
   const subdistrictActiveRef = useRef(false);
   // Flood year-compare: side A (info-blue) is drawn on the MAIN map as hex-LOD
@@ -160,8 +170,12 @@ export function useMorphismMap({
   const floodCmpActiveRef = useRef(false);
   // High-zoom REAL detail cropped to the current viewport (fetched on demand by
   // the view, debounced on moveend). Viewport-only, so memory stays bounded
-  // regardless of dataset size.
+  // regardless of dataset size. GEOJSON-FALLBACK path only.
   const floodCmpDetailARef = useRef<FeatureCollection<unknown> | null>(null);
+  // PMTiles URLs (pmtiles mode): single-date detail + compare side A detail.
+  // Kept in refs so a theme style swap re-installs the same vector sources.
+  const floodPmUrlRef = useRef<string | null>(null);
+  const floodCmpAPmUrlRef = useRef<string | null>(null);
   // Low-zoom flood hex OVERVIEWS (coarse/medium/fine) derived from the active
   // date dataset — swapped by zoom band so flooding stays legible when zoomed
   // out. Kept in refs so it survives a theme style swap; active only for a
@@ -173,6 +187,51 @@ export function useMorphismMap({
     const src = m.getSource(id);
     if (src && "setData" in src) {
       (src as { setData: (d: FeatureCollection<unknown>) => void }).setData(fc);
+    }
+  };
+
+  // Create-or-repoint one PMTiles vector dataset. The source id is STABLE: it
+  // is added once and re-pointed with setUrl on later sessions/dates — sources
+  // and layers are never torn down and recreated during interaction.
+  const ensurePmDataset = (
+    m: MaplibreMap,
+    src: string,
+    url: string,
+    color: string,
+    fillOpacity: number,
+  ) => {
+    const existing = m.getSource(src) as unknown as
+      | { setUrl?: (u: string) => void }
+      | undefined;
+    if (existing) {
+      existing.setUrl?.(url);
+    } else {
+      m.addSource(src, { type: "vector", url });
+    }
+    if (!m.getLayer(`${src}-fill`)) {
+      m.addLayer({
+        id: `${src}-fill`,
+        type: "fill",
+        source: src,
+        "source-layer": PM_SOURCE_LAYER,
+        minzoom: FLOOD_DETAIL_MIN_ZOOM,
+        paint: { "fill-color": color, "fill-opacity": fillOpacity },
+        layout: { visibility: "none" },
+      });
+      m.addLayer({
+        id: `${src}-line`,
+        type: "line",
+        source: src,
+        "source-layer": PM_SOURCE_LAYER,
+        minzoom: FLOOD_DETAIL_MIN_ZOOM,
+        paint: { "line-color": color, "line-width": 1, "line-opacity": 0.85 },
+        layout: { visibility: "none" },
+      });
+      // Slot under the marker/label layers when they exist (mid-session add).
+      if (m.getLayer("buffer-line")) {
+        m.moveLayer(`${src}-fill`, "buffer-line");
+        m.moveLayer(`${src}-line`, "buffer-line");
+      }
     }
   };
 
@@ -264,7 +323,11 @@ export function useMorphismMap({
   const applyFloodCmpDetailRange = useCallback((m: MaplibreMap) => {
     const fine = FLOOD_HEX_LEVELS.find((l) => l.key === "fine");
     if (!fine) return;
-    const hasDetail = Boolean(floodCmpDetailARef.current?.features.length);
+    // PMTiles detail (URL set) counts as "detail available" — tiles stream per
+    // viewport, so the fine hex keeps its normal band and never doubles up.
+    const hasDetail =
+      Boolean(floodCmpDetailARef.current?.features.length) ||
+      Boolean(floodCmpAPmUrlRef.current);
     const maxZoom = hasDetail ? fine.maxZoom : 24;
     ["flood-a-fine-fill", "flood-a-fine-line"].forEach((id) => {
       if (m.getLayer(id)) m.setLayerZoomRange(id, fine.minZoom, maxZoom);
@@ -290,11 +353,56 @@ export function useMorphismMap({
       ANALYSIS_LAYERS.forEach((id) => {
         if (!m.getSource(id)) m.addSource(id, { type: "geojson", data: EMPTY });
       });
+      // Manual "Administrative boundaries" toggle — REAL admin hierarchy fed by
+      // use-admin-boundaries (region / province / district / subdistrict by
+      // zoom band). Region view carries a per-feature `color` (region token);
+      // the other levels fall back to the boundaries palette token. Line width
+      // steps down with the level so subdistricts stay a hairline.
+      const boundaryColor = [
+        "coalesce",
+        ["get", "color"],
+        palette.boundaries,
+      ] as unknown as Expr;
+      const boundaryWidth = [
+        "match",
+        ["get", "level"],
+        "region",
+        1.6,
+        "province",
+        1.4,
+        "district",
+        1,
+        "subdistrict",
+        0.6,
+        1.5,
+      ] as unknown as Expr;
+      // Soft fill ONLY for the region view (features carrying a region colour);
+      // province/district/subdistrict render as outlines.
+      const boundaryFillOpacity = [
+        "case",
+        ["has", "color"],
+        0.14,
+        0,
+      ] as unknown as Expr;
+      addLayer({
+        id: "boundaries-fill",
+        type: "fill",
+        source: "boundaries",
+        paint: {
+          "fill-color": boundaryColor,
+          "fill-opacity": boundaryFillOpacity,
+        },
+        layout: { visibility: "none" },
+      });
       addLayer({
         id: "boundaries",
         type: "line",
         source: "boundaries",
-        paint: { "line-color": palette.boundaries, "line-width": 1.5 },
+        paint: {
+          "line-color": boundaryColor,
+          "line-width": boundaryWidth,
+          "line-opacity": 0.9,
+        },
         layout: { visibility: "none" },
       });
       // DETAIL flood (original geometry) — only from FLOOD_DETAIL_MIN_ZOOM up,
@@ -410,6 +518,14 @@ export function useMorphismMap({
         paint: { "line-color": floodColorA, "line-width": 1.2, "line-opacity": 0.9 },
         layout: { visibility: "none" },
       });
+
+      // PMTiles vector datasets (single-date + compare side A) — re-installed
+      // after a theme style swap from the URL refs; colours re-read from the
+      // active theme's tokens.
+      if (floodPmUrlRef.current)
+        ensurePmDataset(m, FLOOD_PM, floodPmUrlRef.current, palette.flood, 0.3);
+      if (floodCmpAPmUrlRef.current)
+        ensurePmDataset(m, FLOOD_A_PM, floodCmpAPmUrlRef.current, floodColorA, 0.32);
       addLayer({
         id: "buffer",
         type: "fill",
@@ -598,7 +714,9 @@ export function useMorphismMap({
         "flood-hex-medium-line",
         "flood-hex-fine-line",
         "flood-line",
+        ...pmLayerIds(FLOOD_PM),
         ...FLOOD_CMP_A_LAYERS,
+        ...pmLayerIds(FLOOD_A_PM),
         "buffer-line",
         "buffer-center",
         "hospitals",
@@ -618,6 +736,7 @@ export function useMorphismMap({
         });
       }
       setData(m, "adm", admRef.current ?? EMPTY);
+      setData(m, "boundaries", adminBoundariesRef.current ?? EMPTY);
       setData(m, "adm-district", districtDataRef.current ?? EMPTY);
       setData(m, "adm-subdistrict", subdistrictDataRef.current ?? EMPTY);
       setData(m, "buffer-center", bufferCentersRef.current ?? EMPTY);
@@ -658,8 +777,17 @@ export function useMorphismMap({
           m.setLayoutProperty(id, "visibility", on ? "visible" : "none");
       };
       FLOOD_CMP_A_LAYERS.forEach((id) => setVis(id, cmp));
-      setVis("flood", cmp ? false : layersRef.current.flood.visible);
-      setVis("flood-line", cmp ? false : layersRef.current.flood.visible);
+      pmLayerIds(FLOOD_A_PM).forEach((id) =>
+        setVis(id, cmp && Boolean(floodCmpAPmUrlRef.current)),
+      );
+      // Single-date flood detail: pmtiles layers when a URL is committed, the
+      // geojson layers otherwise — never both.
+      const pmSingle = Boolean(floodPmUrlRef.current);
+      pmLayerIds(FLOOD_PM).forEach((id) =>
+        setVis(id, !cmp && pmSingle && layersRef.current.flood.visible),
+      );
+      setVis("flood", cmp || pmSingle ? false : layersRef.current.flood.visible);
+      setVis("flood-line", cmp || pmSingle ? false : layersRef.current.flood.visible);
       // Overview hexes follow the flood toggle too (active only for date
       // scenarios); MapLibre's minzoom/maxzoom pick which resolution renders.
       const overviewOn =
@@ -693,6 +821,9 @@ export function useMorphismMap({
       try {
         const mod = await import("maplibre-gl");
         const maplibregl = mod.default ?? mod;
+        // PMTiles protocol — registered ONCE per app lifecycle (idempotent),
+        // never per map instance or per compare session.
+        ensurePmtilesProtocol(maplibregl);
         if (cancelled || !containerRef.current) return;
 
         map = new maplibregl.Map({
@@ -798,23 +929,38 @@ export function useMorphismMap({
     const map = mapRef.current;
     if (!map || !ready) return;
     // In compare mode the single flood layer MUST stay hidden — the per-year
-    // clipped layers replace it. (The floodcmp scenario marks flood "visible",
-    // so without this the global blue extent would render everywhere.)
+    // layers replace it. When a PMTiles URL is committed the vector layers
+    // stand in for the geojson detail the same way.
     const cmp = floodCmpActiveRef.current;
+    const pmSingle = Boolean(floodPmUrlRef.current);
     (Object.keys(layers) as LayerId[]).forEach((id) => {
       if (id === "hospitals") return;
       if (map.getLayer(id)) {
-        const on = id === "flood" && cmp ? false : layers[id].visible;
+        const on = id === "flood" && (cmp || pmSingle) ? false : layers[id].visible;
         map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
       }
     });
     // Sub-layers follow their parent layer toggle (flood hidden while comparing).
+    if (map.getLayer("boundaries-fill"))
+      map.setLayoutProperty(
+        "boundaries-fill",
+        "visibility",
+        layers.boundaries.visible ? "visible" : "none",
+      );
     if (map.getLayer("flood-line"))
       map.setLayoutProperty(
         "flood-line",
         "visibility",
-        !cmp && layers.flood.visible ? "visible" : "none",
+        !cmp && !pmSingle && layers.flood.visible ? "visible" : "none",
       );
+    pmLayerIds(FLOOD_PM).forEach((id) => {
+      if (map.getLayer(id))
+        map.setLayoutProperty(
+          id,
+          "visibility",
+          !cmp && pmSingle && layers.flood.visible ? "visible" : "none",
+        );
+    });
     // Hex overview layers follow the flood toggle (active only for date
     // scenarios); minzoom/maxzoom then pick which resolution actually renders.
     const overviewOn =
@@ -920,6 +1066,28 @@ export function useMorphismMap({
     [],
   );
 
+  // Commit (or clear) the single-date PMTiles detail. Replaces the geojson
+  // "flood"/"flood-line" pair: the browser range-fetches only visible tiles —
+  // the complete GeoJSON is never downloaded in pmtiles mode.
+  const commitFloodTiles = useCallback((url: string | null) => {
+    floodPmUrlRef.current = url;
+    const m = mapRef.current;
+    if (!m) return;
+    const setVis = (id: string, on: boolean) => {
+      if (m.getLayer(id))
+        m.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+    };
+    if (url) {
+      ensurePmDataset(m, FLOOD_PM, url, readMapPalette().flood, 0.3);
+      const on = !floodCmpActiveRef.current && layersRef.current.flood.visible;
+      pmLayerIds(FLOOD_PM).forEach((id) => setVis(id, on));
+      setVis("flood", false);
+      setVis("flood-line", false);
+    } else {
+      pmLayerIds(FLOOD_PM).forEach((id) => setVis(id, false));
+    }
+  }, []);
+
   // Feed (or clear) the low-zoom hex overviews (all resolutions) for the active
   // flood date. Pass null to deactivate (mock flood scenarios have no overview).
   // Visibility is set imperatively so the overview appears in the same commit as
@@ -985,9 +1153,12 @@ export function useMorphismMap({
   // (side B is fed to the overlay map by the view). Pass null to leave compare
   // and restore the single flood layer. NO per-frame work happens after this —
   // zoom picks the LOD via minzoom/maxzoom, the divider is CSS-only.
+  // `aPmUrl` (pmtiles mode) points side A's high-zoom detail at a PMTiles
+  // archive instead of the geojson viewport slices.
   const setFloodCompare = useCallback(
-    (a: FloodCompareData | null) => {
+    (a: FloodCompareData | null, aPmUrl: string | null = null) => {
       floodCmpARef.current = a;
+      floodCmpAPmUrlRef.current = a ? aPmUrl : null;
       floodCmpActiveRef.current = Boolean(a);
       const m = mapRef.current;
       if (!m) return;
@@ -1003,11 +1174,25 @@ export function useMorphismMap({
         floodCmpDetailARef.current = null;
         setData(m, "flood-a-detail", EMPTY);
       }
+      if (cmp && aPmUrl) {
+        ensurePmDataset(
+          m,
+          FLOOD_A_PM,
+          aPmUrl,
+          readCssColor(FLOOD_COMPARE_SIDES.a.cssVar),
+          0.32,
+        );
+      }
       FLOOD_CMP_A_LAYERS.forEach((id) => setVis(id, cmp));
+      pmLayerIds(FLOOD_A_PM).forEach((id) => setVis(id, cmp && Boolean(aPmUrl)));
       // Hide the single flood layer (detail + hex overview) during compare;
-      // restore it afterwards.
-      setVis("flood", cmp ? false : layersRef.current.flood.visible);
-      setVis("flood-line", cmp ? false : layersRef.current.flood.visible);
+      // restore it afterwards (pm single-date detail included).
+      const pmSingle = Boolean(floodPmUrlRef.current);
+      setVis("flood", cmp || pmSingle ? false : layersRef.current.flood.visible);
+      setVis("flood-line", cmp || pmSingle ? false : layersRef.current.flood.visible);
+      pmLayerIds(FLOOD_PM).forEach((id) =>
+        setVis(id, !cmp && pmSingle && layersRef.current.flood.visible),
+      );
       const overviewOn =
         !cmp && layersRef.current.flood.visible && floodOverviewActiveRef.current;
       FLOOD_HEX_LEVELS.forEach((lvl) => {
@@ -1055,6 +1240,18 @@ export function useMorphismMap({
     [applyZoomGating],
   );
 
+  // Manual "Administrative boundaries" layer data (real zoom-banded admin
+  // hierarchy from use-admin-boundaries). Pass null to clear. Kept in a ref so
+  // a theme style swap re-feeds the same data.
+  const setAdminBoundaries = useCallback(
+    (fc: FeatureCollection<unknown> | null) => {
+      adminBoundariesRef.current = fc;
+      const m = mapRef.current;
+      if (m && m.getSource("boundaries")) setData(m, "boundaries", fc ?? EMPTY);
+    },
+    [],
+  );
+
   // ADM2 district aggregation (fill/line context + count labels). Pass null to
   // clear — the province aggregation then takes over again (fallback path).
   const setDistricts = useCallback(
@@ -1090,9 +1287,11 @@ export function useMorphismMap({
     fitBounds,
     fitBoundsAndWait,
     commitFloodExtent,
+    commitFloodTiles,
     setFloodOverview,
     setAggregate,
     setBoundaries,
+    setAdminBoundaries,
     setBufferCenters,
     setFloodCompare,
     setFloodCompareDetail,

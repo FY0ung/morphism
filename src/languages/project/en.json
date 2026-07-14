@@ -29,7 +29,11 @@
       "boundaryData": "Administrative boundary (data area only)",
       "floodYear": "Flood areas — Year {{year}}",
       "floodDate": "Flood areas — {{date}}",
-      "floodSample": "Showing a partial sample of the dataset"
+      "floodSample": "Showing a partial sample of the dataset",
+      "admRegion": "Region boundaries",
+      "admProvince": "Province boundaries",
+      "admDistrict": "District boundaries",
+      "admSubdistrict": "Subdistrict boundaries"
     },
     "admStatus": {
       "loading": "Loading detailed boundaries…",
@@ -62,8 +66,8 @@
     "resizeHandle": "Resize chat panel (drag or use arrow keys)",
     "loading": "Loading data…",
     "error": "Something went wrong, please try again",
-    "exportCsv": "CSV",
-    "exportPng": "PNG",
+    "exportCsv": "Download CSV",
+    "exportPng": "Download PNG",
     "layer": {
       "hospitals": "Hospitals",
       "flood": "Flood areas",
@@ -103,7 +107,9 @@
       "divider": "Comparison divider (drag or use the left/right arrow keys)",
       "valueText": "Left side revealed {{pct}}%",
       "side": "Year {{year}}",
-      "close": "Close comparison"
+      "close": "Close comparison",
+      "reopen": "Open comparison",
+      "reopenActive": "Comparing on the map"
     },
     "result": "Map layers updated",
     "chartCompareTitle": "Hospital count comparison",
@@ -223,6 +229,7 @@
         "periodSnapshot": "Showing the latest snapshot in this range: {{date}}."
       },
       "unknown": "I didn't quite understand that. Try asking about hospitals, flooding, or an area you'd like to see on the map."
-    }
+    },
+    "exportMenu": "Export chart"
   }
 }

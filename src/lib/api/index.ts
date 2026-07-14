@@ -6,6 +6,8 @@ export {
   getFloodAreas,
   getFloodDetailInBBox,
   getFloodOverviewAsset,
+  getFloodOverviewByKey,
+  getFloodStats,
 } from "./flood";
 export { getBoundaries, getProvinceBoundaries } from "./boundaries";
 export { getAdmBoundaries } from "./admin-boundaries";

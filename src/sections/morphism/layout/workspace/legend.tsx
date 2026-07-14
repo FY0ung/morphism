@@ -4,7 +4,17 @@ import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { LAYER_META } from "../../const";
 import { FLOOD_COMPARE_SIDES } from "@/configs/flood-compare";
+import type { AdminBoundaryLevel } from "@/hooks";
 import type { LayersState, ProvinceCount, SwipeCompare } from "@/types";
+
+// Admin level → its exact legend label, so the legend always states WHICH
+// administrative level the boundaries layer is currently showing.
+const ADM_LEVEL_KEY = {
+  region: "morphism.legend.admRegion",
+  province: "morphism.legend.admProvince",
+  district: "morphism.legend.admDistrict",
+  subdistrict: "morphism.legend.admSubdistrict",
+} as const;
 
 interface Props {
   layers: LayersState;
@@ -15,6 +25,8 @@ interface Props {
   boundaryColor?: string | null;
   /** True when the province polygons failed to load (show an empty state). */
   boundariesError?: boolean;
+  /** Admin level the manual boundaries layer is rendering, null when off. */
+  boundariesLevel?: AdminBoundaryLevel | null;
   /** Active flood year-compare (year A = left, year B = right), else null. */
   swipe?: SwipeCompare | null;
   /** Region-compare rows (label + colour class), else null. */
@@ -35,6 +47,7 @@ export default function Legend({
   aggregate,
   boundaryColor,
   boundariesError,
+  boundariesLevel,
   swipe,
   compareRegions,
   floodDateLabel,
@@ -147,7 +160,10 @@ export default function Legend({
                 )}
                 aria-hidden
               />
-              {t(m.labelKey as "morphism.layer.hospitals")}
+              {/* Boundaries: state the EXACT admin level being rendered. */}
+              {m.id === "boundaries" && boundariesLevel
+                ? t(ADM_LEVEL_KEY[boundariesLevel])
+                : t(m.labelKey as "morphism.layer.hospitals")}
             </li>
           ))}
         </ul>

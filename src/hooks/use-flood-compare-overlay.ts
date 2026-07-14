@@ -12,6 +12,7 @@ import {
   LIGHT_BASEMAP_STYLE,
   type FloodCompareData,
 } from "./use-morphism-map";
+import { ensurePmtilesProtocol } from "@/lib/map/pmtiles";
 import type { FeatureCollection } from "@/types";
 
 type MaplibreMap = import("maplibre-gl").Map;
@@ -42,6 +43,9 @@ interface UseFloodCompareOverlayArgs {
   active: boolean;
   /** Side B's hex LODs; null until the compare fetch resolves. */
   data: FloodCompareData | null;
+  /** PMTiles URL for side B's high-zoom detail (pmtiles mode); null in the
+   *  geojson fallback, where detail arrives via setOverlayDetail instead. */
+  pmUrl?: string | null;
   /** Active UI theme — the overlay basemap follows the main map's. */
   theme?: string;
 }
@@ -65,6 +69,7 @@ export function useFloodCompareOverlay({
   mainMap,
   active,
   data,
+  pmUrl = null,
   theme,
 }: UseFloodCompareOverlayArgs) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -75,6 +80,7 @@ export function useFloodCompareOverlay({
   // Data/theme mirrored in refs so the create effect never depends on them.
   const dataRef = useRef<FloodCompareData | null>(data);
   const detailRef = useRef<FeatureCollection<unknown> | null>(null);
+  const pmUrlRef = useRef<string | null>(pmUrl);
   const themeRef = useRef(theme);
   useEffect(() => {
     themeRef.current = theme;
@@ -92,11 +98,13 @@ export function useFloodCompareOverlay({
   };
 
   // Fine-hex ↔ detail hand-off (same rule as side A on the main map): fine hex
-  // extends past the detail band until real viewport detail has features.
+  // extends past the detail band until real detail is available — either fed
+  // geojson slices (fallback) or a PMTiles detail source (pmtiles mode).
   const applyDetailRange = useCallback((m: MaplibreMap) => {
     const fine = FLOOD_HEX_LEVELS.find((l) => l.key === "fine");
     if (!fine) return;
-    const hasDetail = Boolean(detailRef.current?.features.length);
+    const hasDetail =
+      Boolean(detailRef.current?.features.length) || Boolean(pmUrlRef.current);
     const maxZoom = hasDetail ? fine.maxZoom : 24;
     ["flood-b-fine-fill", "flood-b-fine-line"].forEach((id) => {
       if (m.getLayer(id)) m.setLayerZoomRange(id, fine.minZoom, maxZoom);
@@ -172,6 +180,31 @@ export function useFloodCompareOverlay({
         minzoom: FLOOD_DETAIL_MIN_ZOOM,
         paint: { "line-color": color, "line-width": 1.2, "line-opacity": 0.9 },
       });
+      // PMTiles detail (pmtiles mode): a stable vector source re-pointed via
+      // setUrl; only the viewport's tiles are ever fetched.
+      if (pmUrlRef.current) {
+        const existing = m.getSource("flood-b-pm") as unknown as
+          | { setUrl?: (u: string) => void }
+          | undefined;
+        if (existing) existing.setUrl?.(pmUrlRef.current);
+        else m.addSource("flood-b-pm", { type: "vector", url: pmUrlRef.current });
+        addLayer({
+          id: "flood-b-pm-fill",
+          type: "fill",
+          source: "flood-b-pm",
+          "source-layer": "flood",
+          minzoom: FLOOD_DETAIL_MIN_ZOOM,
+          paint: { "fill-color": color, "fill-opacity": 0.4 },
+        });
+        addLayer({
+          id: "flood-b-pm-line",
+          type: "line",
+          source: "flood-b-pm",
+          "source-layer": "flood",
+          minzoom: FLOOD_DETAIL_MIN_ZOOM,
+          paint: { "line-color": color, "line-width": 1, "line-opacity": 0.85 },
+        });
+      }
       // Theme re-install happens on a LIVE map — re-feed immediately. The
       // initial install stays empty; markReady feeds after the first idle.
       if (mapReadyRef.current) feed(m);
@@ -192,6 +225,7 @@ export function useFloodCompareOverlay({
       try {
         const mod = await import("maplibre-gl");
         const maplibregl = mod.default ?? mod;
+        ensurePmtilesProtocol(maplibregl);
         if (cancelled || !containerRef.current) return;
 
         appliedStyleRef.current = styleFor(themeRef.current);
@@ -278,6 +312,15 @@ export function useFloodCompareOverlay({
     const m = overlayRef.current;
     if (m && mapReadyRef.current) feed(m);
   }, [data, feed, mapReady]);
+
+  // ── point (or re-point) side B's PMTiles detail when the URL arrives ───────
+  useEffect(() => {
+    pmUrlRef.current = pmUrl;
+    const m = overlayRef.current;
+    if (!m || !mapReadyRef.current) return; // initial install handles it
+    if (pmUrl) installLayers(m); // idempotent: adds/setUrl the pm source
+    applyDetailRange(m);
+  }, [pmUrl, mapReady, installLayers, applyDetailRange]);
 
   // ── theme: restyle the EXISTING overlay map — never recreate it ────────────
   useEffect(() => {

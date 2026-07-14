@@ -113,6 +113,9 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
           pending: true,
           steps: renderSteps(0, []),
           query: text,
+          // Compare queries carry their selection so the result card can
+          // re-open the comparison after the user closes it.
+          swipe: scenario.swipe,
         },
       ]);
 
@@ -212,6 +215,8 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
           ...m,
           text: s.result,
           charts: s.charts ?? m.charts,
+          // Re-resolved swipe carries language-correct labels for the card.
+          swipe: s.swipe ?? m.swipe,
           steps: m.steps?.map((st, i) => ({
             ...st,
             label: s.steps[i]?.label ?? st.label,

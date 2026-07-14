@@ -3,6 +3,8 @@
 import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/icons";
+import { IconButton } from "@/components/actionable/IconButtons";
+import { Dropdown } from "@/components/selection/DropdownMenu";
 import { exportChartCSV, exportSvgPNG } from "@/lib/chart-export";
 import type { ChartData } from "@/types";
 
@@ -89,32 +91,56 @@ export default function ChartCard({ chart }: Props) {
         <span className="text-xs font-semibold text-text-default-default">
           {title}
         </span>
-        <span className="flex gap-1.5">
-          <button
-            type="button"
-            onClick={() =>
-              exportChartCSV(chart.rows, `${chart.exportName}.csv`, [
-                t("morphism.chartCsvHeaderLabel"),
-                t("morphism.chartCsvHeaderValue"),
-              ])
-            }
-            className="inline-flex h-7 items-center gap-1 rounded-full border border-border-default-onlight px-3 text-[11px] font-semibold text-text-default-onlight transition-colors hover:border-border-primary-default hover:bg-background-primary-light hover:text-text-primary-onlight"
-          >
-            <Icon name="Download01" className="size-3" />
-            {t("morphism.exportCsv")}
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              svgRef.current &&
-              exportSvgPNG(svgRef.current, `${chart.exportName}.png`)
-            }
-            className="inline-flex h-7 items-center gap-1 rounded-full border border-border-default-onlight px-3 text-[11px] font-semibold text-text-default-onlight transition-colors hover:border-border-primary-default hover:bg-background-primary-light hover:text-text-primary-onlight"
-          >
-            <Icon name="Image01" className="size-3" />
-            {t("morphism.exportPng")}
-          </button>
-        </span>
+        {/* ONE compact export action → dropdown (Download CSV / PNG). Keeps the
+            card header quiet — the two old pill buttons competed with the title. */}
+        <Dropdown.Root>
+          <Dropdown.Trigger>
+            {(open) => (
+              <IconButton
+                type="button"
+                variant="text"
+                color="default"
+                size="small"
+                aria-label={t("morphism.exportMenu")}
+                aria-haspopup="menu"
+                aria-expanded={open}
+                className="-my-1 focus-visible:outline-2 focus-visible:outline-border-primary-default"
+              >
+                <Icon name="DotsVertical" className="size-4" />
+              </IconButton>
+            )}
+          </Dropdown.Trigger>
+          <Dropdown.Content align="end">
+            <Dropdown.Item
+              item={t("morphism.exportCsv")}
+              iconStart={
+                <Icon
+                  name="Download01"
+                  className="size-4 text-text-default-onlight"
+                />
+              }
+              onClick={() =>
+                exportChartCSV(chart.rows, `${chart.exportName}.csv`, [
+                  t("morphism.chartCsvHeaderLabel"),
+                  t("morphism.chartCsvHeaderValue"),
+                ])
+              }
+            />
+            <Dropdown.Item
+              item={t("morphism.exportPng")}
+              iconStart={
+                <Icon
+                  name="Image01"
+                  className="size-4 text-text-default-onlight"
+                />
+              }
+              onClick={() =>
+                svgRef.current &&
+                exportSvgPNG(svgRef.current, `${chart.exportName}.png`)
+              }
+            />
+          </Dropdown.Content>
+        </Dropdown.Root>
       </figcaption>
 
       {isDonut ? (

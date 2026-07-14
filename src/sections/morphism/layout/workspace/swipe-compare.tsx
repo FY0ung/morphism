@@ -10,20 +10,16 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/actionable/Buttons";
 import { Icon } from "@/components/icons";
 import { clampClip } from "@/hooks";
-import { FLOOD_COMPARE_SIDES } from "@/configs/flood-compare";
 
 interface Props {
   active: boolean;
   /**
    * Divider + overlay are interactive only when BOTH compare maps and their
-   * data are ready — until then only the side labels and Close render, and the
-   * existing map stays untouched underneath.
+   * data are ready — until then only Close renders, and the existing map stays
+   * untouched underneath. Which colour belongs to which period lives in the
+   * LEGEND only (no floating side tags on the map).
    */
   ready: boolean;
-  /** Left-side label (year or date). */
-  labelA: string;
-  /** Right-side label (year or date). */
-  labelB: string;
   /**
    * Wrapper of the overlay (side B) map. The divider reveals it by writing
    * `clip-path` DIRECTLY on this node — pure CSS, no MapLibre work, no React
@@ -49,8 +45,6 @@ const STEP_LARGE = 10;
 export default function SwipeCompare({
   active,
   ready,
-  labelA,
-  labelB,
   overlayRef,
   clip,
   onClipChange,
@@ -157,29 +151,17 @@ export default function SwipeCompare({
   if (!active) return null;
 
   const pct = Math.round(clip);
-  const tagClass =
-    "pointer-events-none absolute top-16 z-10 inline-flex items-center gap-1.5 rounded-full border border-border-default-default bg-background-default-default px-2.5 py-1 text-xs font-semibold text-text-default-onlight shadow-md";
-  const dotClass = "size-2.5 flex-none rounded-full";
 
   return (
     // The wrapper itself is click-through so the main map underneath stays
     // pannable; only the divider and close button opt back into pointer events.
+    // Side labels/colours live in the LEGEND (bottom-left) — no floating tags.
     <div
       ref={wrapperRef}
       className="pointer-events-none absolute inset-0 z-20"
       role="group"
       aria-label={t("morphism.swipe.aria")}
     >
-      {/* corner tags labelling each side — dot colour matches the map layer */}
-      <span className={`${tagClass} left-3`}>
-        <span className={`${dotClass} ${FLOOD_COMPARE_SIDES.a.bg}`} aria-hidden />
-        {labelA}
-      </span>
-      <span className={`${tagClass} right-3`}>
-        <span className={`${dotClass} ${FLOOD_COMPARE_SIDES.b.bg}`} aria-hidden />
-        {labelB}
-      </span>
-
       {/* draggable divider (focusable slider) — enabled only once BOTH sides
           are loaded and the overlay map has rendered (no divider over a map
           that isn't ready to compare yet) */}

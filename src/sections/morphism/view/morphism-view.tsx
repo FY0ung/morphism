@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { useTranslation } from "react-i18next";
 import {
+  useAdminBoundaries,
   useAdminHierarchy,
   useAiAssistant,
   useChatResizer,
@@ -16,9 +17,12 @@ import {
 import {
   getFloodAreas,
   getFloodOverviewAsset,
+  getFloodOverviewByKey,
+  getFloodStats,
   getProvinceBoundaries,
   getHospitals,
 } from "@/lib/api";
+import { floodPmtilesEnabled, floodPmtilesUrl } from "@/configs/flood-data";
 import {
   buildFloodDetailIndex,
   bboxContains,
@@ -33,6 +37,7 @@ import { endpoint } from "@/configs/endpoint";
 import { cn } from "@/lib/utils";
 import type {
   BBox,
+  FeatureCollection,
   FloodAreaFC,
   FloodScenarioMeta,
   HospitalFC,
@@ -49,10 +54,8 @@ import type {
 import {
   resolveScenario,
   MOCK_HOSPITALS,
-  MOCK_FLOOD,
   MOCK_BUFFER,
   MOCK_BUFFER_CENTERS,
-  MOCK_BOUNDARIES,
   FLOOD_ANALYSIS_CENTERS,
   FLOOD_ANALYSIS_RADIUS_KM,
   buildFloodCompareOutcome,
@@ -89,6 +92,8 @@ import {
 import { Tag } from "@/components/selection/Tag";
 
 const TOAST_MS = 2200;
+// No mock geometry — layers without real data render nothing (empty source).
+const EMPTY_FC: FeatureCollection = { type: "FeatureCollection", features: [] };
 // Flood camera transition — capped short (still smooth, uses the map's easing)
 // so scenario completion isn't gated on an unnecessarily long animation.
 const FLOOD_FIT_DURATION = 700;
@@ -144,8 +149,8 @@ const MorphismView = () => {
   // (flagged risk → red). Null = feed the full dataset.
   const [pointOverride, setPointOverride] = useState<HospitalFC | null>(null);
   // Live flood areas for the active date-based flood scenario (Vallaris via the
-  // /api/flood proxy). Null → the map's flood source falls back to MOCK_FLOOD
-  // (only shown when another scenario toggles the flood layer).
+  // /api/flood proxy). Null → the flood source is EMPTY (no mock geometry; the
+  // layer renders nothing until real data is committed).
   const [floodAreas, setFloodAreas] = useState<FloodAreaFC | null>(null);
   // Active date-based flood scenario metadata (STABLE PRIMITIVES drive the fetch
   // effect — never the fetched FeatureCollection). Null when not in flood mode.
@@ -176,6 +181,8 @@ const MorphismView = () => {
   const [swipe, setSwipe] = useState<SwipeCompareState | null>(null);
   // Side B's hex LODs — null until the compare fetch resolves.
   const [swipeB, setSwipeB] = useState<FloodCompareData | null>(null);
+  // Side B's PMTiles detail URL (pmtiles mode; null in the geojson fallback).
+  const [swipeBPmUrl, setSwipeBPmUrl] = useState<string | null>(null);
   // Wrapper of the overlay map — the divider writes clip-path on this node.
   const overlayWrapRef = useRef<HTMLDivElement | null>(null);
   // Per-feature bbox indexes over each side's ALREADY-LOADED full detail
@@ -225,18 +232,17 @@ const MorphismView = () => {
   } = useMapLayers();
 
   const { width, active, onPointerDown, onKeyDown } = useChatResizer(direction);
-  // Feed every analysis layer with (mock) demo data so toggling a layer renders
-  // real geometry on the map. In compare mode the single flood layer is hidden
-  // (the per-year layers take over), so its data is left as the normal extent.
+  // Layer data for the map. The flood layer carries ONLY real processed data
+  // (never mock geometry — no data means an empty layer), and the manual
+  // administrative-boundaries layer is fed separately by useAdminBoundaries.
   // Memoised so the map's data-sync effect only fires when the data changes.
   const mapData = useMemo(
     () => ({
       // Buffer scenario feeds only the in-radius (risk) subset; otherwise full.
       hospitals: pointOverride ?? hospitalsFC ?? MOCK_HOSPITALS,
-      boundaries: MOCK_BOUNDARIES,
       buffer: MOCK_BUFFER,
-      // Live flood areas when the proxy succeeds; else the ported survey polygons.
-      flood: floodAreas ?? MOCK_FLOOD,
+      // Live flood areas only — real data flow, no mock fallback.
+      flood: floodAreas ?? EMPTY_FC,
     }),
     [hospitalsFC, pointOverride, floodAreas],
   );
@@ -267,9 +273,11 @@ const MorphismView = () => {
     fitBounds,
     fitBoundsAndWait,
     commitFloodExtent,
+    commitFloodTiles,
     setFloodOverview,
     setAggregate,
     setBoundaries,
+    setAdminBoundaries,
     setBufferCenters,
     setFloodCompare,
     setFloodCompareDetail,
@@ -291,8 +299,29 @@ const MorphismView = () => {
       mainMap: map,
       active: swipe !== null,
       data: swipeB,
+      pmUrl: swipeBPmUrl,
       theme: resolvedTheme,
     });
+
+  // Manual "Administrative boundaries" layer: REAL zoom-banded admin hierarchy
+  // (region → province → district → subdistrict) from the open ADM datasets.
+  const regionVarFor = useCallback(
+    (provinceName: string) =>
+      REGION_TOKEN_VAR[provinceRegion(provinceName) ?? ""] ??
+      REGION_DEFAULT_TOKEN,
+    [],
+  );
+  const adminBounds = useAdminBoundaries({
+    map,
+    visible: layers.boundaries.visible,
+    theme: resolvedTheme,
+    regionVarFor,
+  });
+  // Push the computed level FC into the map's `boundaries` source (ref-backed,
+  // so a theme style swap re-feeds the same data).
+  useEffect(() => {
+    setAdminBoundaries(adminBounds.fc);
+  }, [adminBounds.fc, setAdminBoundaries]);
 
   // Scope for the zoom-driven admin hierarchy: `mode` = "aggregate" (scenario
   // supplies province counts) or "points" (derive counts from the shown points);
@@ -426,6 +455,57 @@ const MorphismView = () => {
       try {
         const tLoad = performance.now();
 
+        // ── PMTILES MODE ─────────────────────────────────────────────────────
+        // stats.json (bbox/area/totals) + hex overview + vector tiles: the
+        // complete GeoJSON is never downloaded or parsed. Any miss falls
+        // through to the geojson flow below (per-request fallback).
+        if (floodPmtilesEnabled()) {
+          try {
+            const [stats, pmOverview] = await Promise.all([
+              getFloodStats(meta.date, controller.signal),
+              getFloodOverviewByKey(meta.date, controller.signal),
+            ]);
+            if (stale()) return { ok: true };
+            const pmHexCount = pmOverview
+              ? pmOverview.coarse.features.length +
+                pmOverview.medium.features.length +
+                pmOverview.fine.features.length
+              : 0;
+            if (stats && stats.featureCount > 0 && pmOverview && pmHexCount > 0) {
+              setFloodStatus("updating-map");
+              setFloodOverview(pmOverview);
+              setFloodAreas(null);
+              setFloodPartial(false);
+              applyExact(["flood"]);
+              commitFloodTiles(floodPmtilesUrl(meta.date));
+              report?.done(1, since(tLoad));
+              report?.done(2, since(tLoad));
+
+              setFloodStatus("moving-camera");
+              const tCam = performance.now();
+              const bb = stats.bbox;
+              const key = `${meta.scenarioId}:${bb.join(",")}`;
+              if (floodBoundsRef.current !== key) {
+                floodBoundsRef.current = key;
+                await fitBoundsAndWait({
+                  sw: [bb[0], bb[1]],
+                  ne: [bb[2], bb[3]],
+                  duration: FLOOD_FIT_DURATION,
+                });
+              }
+              if (stale()) return { ok: true };
+              report?.done(3, since(tCam));
+              setFloodStatus("complete");
+              showToast(t("morphism.toast.applied"));
+              return { ok: true };
+            }
+          } catch (err) {
+            if (err instanceof DOMException && err.name === "AbortError") throw err;
+            // asset missing/unreachable → geojson flow below
+          }
+          commitFloodTiles(null);
+        }
+
         // Phase 3b · overview-first. Start the (large) detail download NOW, in the
         // background, and meanwhile fetch the tiny pre-baked hex overview from the
         // CDN so the flood layer paints INSTANTLY at the current (wide) zoom while
@@ -516,6 +596,7 @@ const MorphismView = () => {
     [
       applyExact,
       commitFloodExtent,
+      commitFloodTiles,
       setFloodOverview,
       fitBoundsAndWait,
       showToast,
@@ -596,6 +677,90 @@ const MorphismView = () => {
       report?.done(0, 0); // resolve_periods — instant
       const tLoad = performance.now();
       try {
+        // ── PMTILES MODE ─────────────────────────────────────────────────────
+        // Per side only stats (bbox + measured area) and the hex overview are
+        // fetched — a few KB each; high-zoom detail streams as vector tiles.
+        // Year keys (`year-<CE>`) compare ANNUAL CUMULATIVE datasets; date keys
+        // compare single observations. Misses fall through to the geojson
+        // fallback below (where a year means its snapshot date).
+        if (floodPmtilesEnabled()) {
+          const loadSidePm = async (
+            date: string,
+            key?: string,
+          ): Promise<{
+            km2: number;
+            data: FloodCompareData;
+            bbox: BBox;
+            pmUrl: string;
+          } | null> => {
+            const k = key ?? date;
+            const [stats, overview] = await Promise.all([
+              getFloodStats(k, controller.signal),
+              getFloodOverviewByKey(k, controller.signal),
+            ]);
+            if (!stats || stats.featureCount === 0 || !overview) return null;
+            const hexCount =
+              overview.coarse.features.length +
+              overview.medium.features.length +
+              overview.fine.features.length;
+            if (!hexCount) return null;
+            return {
+              km2: stats.areaKm2,
+              data: overview,
+              bbox: stats.bbox as BBox,
+              pmUrl: floodPmtilesUrl(k),
+            };
+          };
+          try {
+            const [A, B] = await Promise.all([
+              loadSidePm(sel.dateA, sel.keyA),
+              loadSidePm(sel.dateB, sel.keyB),
+            ]);
+            if (stale()) return { ok: true };
+            if (A && B) {
+              report?.done(1, since(tLoad));
+              const tMeasure = performance.now();
+              // No geojson indexes in pmtiles mode — tiles stream per viewport.
+              cmpDetailIdxARef.current = null;
+              cmpDetailIdxBRef.current = null;
+              setFloodCompare(A.data, A.pmUrl);
+              setSwipeB(B.data);
+              setSwipeBPmUrl(B.pmUrl);
+              report?.done(2, since(tMeasure));
+
+              await fitBoundsAndWait({
+                sw: [
+                  Math.min(A.bbox[0], B.bbox[0]),
+                  Math.min(A.bbox[1], B.bbox[1]),
+                ],
+                ne: [
+                  Math.max(A.bbox[2], B.bbox[2]),
+                  Math.max(A.bbox[3], B.bbox[3]),
+                ],
+                duration: FLOOD_FIT_DURATION,
+              });
+              if (stale()) return { ok: true };
+
+              const { message, charts } = buildFloodCompareOutcome(
+                {
+                  labelA: sel.labelA,
+                  labelB: sel.labelB,
+                  km2A: A.km2,
+                  km2B: B.km2,
+                },
+                t,
+              );
+              showToast(t("morphism.toast.applied"));
+              return { ok: true, message, charts };
+            }
+          } catch (err) {
+            if (err instanceof DOMException && err.name === "AbortError") throw err;
+            // assets missing/unreachable → geojson fallback below
+          }
+          setSwipeBPmUrl(null);
+        }
+
+        // ── GEOJSON FALLBACK ────────────────────────────────────────────────
         // BOTH sides in parallel — one slow side never blocks the other's
         // download/parse, so the compare is ready in max(A, B), not A + B.
         const [A, B] = await Promise.all([
@@ -640,6 +805,59 @@ const MorphismView = () => {
       }
     },
     [setFloodCompare, fitBoundsAndWait, showToast, t],
+  );
+
+  // Open (or RE-open) the swipe-compare for a selection. One shared path for
+  // the scenario branch AND the chat card's "open comparison again" action, so
+  // reopening after Close runs exactly the proven open flow (overlay resets,
+  // flood-only layers, fetch/measure/draw, camera fit).
+  const openCompare = useCallback(
+    (
+      sel: SwipeCompareState,
+      report?: ScenarioStepReporter,
+    ): Promise<void | ScenarioOutcome> => {
+      // Invalidate any in-flight single-date flood run so it can't commit late.
+      floodAbortRef.current?.abort();
+      floodRequestIdRef.current += 1;
+      setPointOverride(null);
+      setBufferCenters(null);
+      setAggregate(null);
+      setAggregateState(null);
+      setBoundaries(null);
+      setBoundaryColor(null);
+      setCompareMode(false);
+      setCompareLegend(null);
+      setAdmScope(null);
+      pendingAggScenarioRef.current = null;
+      setFloodMeta(null);
+      setFloodAreas(null);
+      setFloodPartial(false);
+      applyExact(["flood"]);
+      // Clear the previous session's side-B data BEFORE opening the new one,
+      // so the overlay can never flash a stale year while the fetch runs.
+      setSwipeB(null);
+      setSwipeBPmUrl(null);
+      setFloodCompare(null);
+      setSwipe(sel);
+      return Promise.resolve(runFloodCompare(sel, report));
+    },
+    [
+      applyExact,
+      runFloodCompare,
+      setAggregate,
+      setBoundaries,
+      setBufferCenters,
+      setCompareMode,
+      setFloodCompare,
+    ],
+  );
+
+  // Reopen from the chat compare-result card (after "Close comparison").
+  const reopenCompare = useCallback(
+    (sel: SwipeCompareState) => {
+      void openCompare(sel);
+    },
+    [openCompare],
   );
 
   // Committed divider position. During a drag the position lives in a ref and
@@ -813,7 +1031,9 @@ const MorphismView = () => {
     pendingAggScenarioRef.current = null;
     setSwipe(null);
     setSwipeB(null);
+    setSwipeBPmUrl(null);
     setFloodCompare(null);
+    commitFloodTiles(null);
     setTimeActive(false);
     setTimeLabel(null);
     applyExact([]);
@@ -824,6 +1044,7 @@ const MorphismView = () => {
     setBufferCenters,
     setCompareMode,
     setFloodCompare,
+    commitFloodTiles,
   ]);
 
   // Apply the assistant's interpretation to the map (deterministic scenario).
@@ -847,33 +1068,14 @@ const MorphismView = () => {
       floodAbortRef.current?.abort();
       floodRequestIdRef.current += 1;
 
-      // Flood swipe-compare (two years, REAL data). Reset other overlays, enter
-      // compare mode, then hand the async fetch/measure/draw to runFloodCompare —
-      // whose promise the assistant awaits for the computed result + chart.
+      // Flood swipe-compare (two years, REAL data). openCompare resets the
+      // other overlays, enters compare mode, then hands the async
+      // fetch/measure/draw to runFloodCompare — whose promise the assistant
+      // awaits for the computed result + chart.
       if (scenario.swipe) {
-        const sel = scenario.swipe;
-        setPointOverride(null);
-        setBufferCenters(null);
-        setAggregate(null);
-        setAggregateState(null);
-        setBoundaries(null);
-        setBoundaryColor(null);
-        setCompareMode(false);
-        setCompareLegend(null);
-        setAdmScope(null);
-        pendingAggScenarioRef.current = null;
-        setFloodMeta(null);
-        setFloodAreas(null);
-        setFloodPartial(false);
-        applyExact(["flood"]);
         setTimeActive(Boolean(scenario.timeActive));
         setTimeLabel(scenario.timeActive ? scenario.timeLabel ?? null : null);
-        // Clear the previous session's side-B data BEFORE opening the new one,
-        // so the overlay can never flash a stale year while the fetch runs.
-        setSwipeB(null);
-        setFloodCompare(null);
-        setSwipe(sel);
-        return runFloodCompare(sel, report);
+        return openCompare(scenario.swipe, report);
       }
 
       // Date-based flood scenario: render the real MultiPolygon extent for a
@@ -894,13 +1096,13 @@ const MorphismView = () => {
         pendingAggScenarioRef.current = null;
         setSwipe(null);
         setSwipeB(null);
+        setSwipeBPmUrl(null);
         setFloodCompare(null);
         // Reflect the observation date/range in the time-filter pill (real
         // snapshots set timeActive; empty-date scenarios leave it cleared).
         setTimeActive(Boolean(scenario.timeActive));
         setTimeLabel(scenario.timeActive ? scenario.timeLabel ?? null : null);
-        // Hide every overlay while loading — crucially this prevents the MOCK
-        // flood extent from flashing at Bangkok. The flood layer is revealed
+        // Hide every overlay while loading. The flood layer is revealed
         // atomically only once the real dataset is committed. Camera NOT moved
         // here; runFloodScenario moves it after the commit and awaits moveend.
         applyExact([]);
@@ -911,8 +1113,8 @@ const MorphismView = () => {
         return runFloodScenario(meta, report);
       }
       // Any non-flood scenario leaves date-based flood mode: release the flood
-      // source (other scenarios use MOCK_FLOOD), deactivate the low-zoom overview
-      // (so mock flood never shows stale overview cells) and reset the machine.
+      // source (it becomes empty — no mock geometry), deactivate the low-zoom
+      // overview and reset the machine.
       setFloodMeta(null);
       setFloodAreas(null);
       setFloodPartial(false);
@@ -1096,10 +1298,13 @@ const MorphismView = () => {
       setTimeActive(Boolean(scenario.timeActive));
       setTimeLabel(scenario.timeActive ? scenario.timeLabel ?? null : null);
       // Any non-swipe scenario closes an open compare (swipe is handled earlier
-      // via its own async branch and never reaches here).
+      // via its own async branch and never reaches here). Non-flood scenarios
+      // also release the single-date PMTiles detail.
       setSwipe(null);
       setSwipeB(null);
+      setSwipeBPmUrl(null);
       setFloodCompare(null);
+      commitFloodTiles(null);
       showToast(t("morphism.toast.applied"));
     },
     [
@@ -1108,13 +1313,14 @@ const MorphismView = () => {
       setBoundaries,
       setBufferCenters,
       setFloodCompare,
+      commitFloodTiles,
       setCompareMode,
       drawAggregateBoundaries,
       fitBounds,
       flyTo,
       hospitalsFC,
       runFloodScenario,
-      runFloodCompare,
+      openCompare,
       setFloodOverview,
       showToast,
       recordScene,
@@ -1199,6 +1405,8 @@ const MorphismView = () => {
         messages={messages}
         pending={pending}
         onSend={ask}
+        onReopenCompare={reopenCompare}
+        activeSwipe={swipe}
         className={cn(
           "order-2 w-full shrink-0 basis-[46%] border-t border-border-default-default",
           "md:order-0 md:w-auto md:grow-0 md:basis-(--chat-w,400px) md:border-t-0 md:border-x",
@@ -1316,6 +1524,7 @@ const MorphismView = () => {
             aggregate={aggregate}
             boundaryColor={boundaryColor}
             boundariesError={boundariesError}
+            boundariesLevel={layers.boundaries.visible ? adminBounds.level : null}
             swipe={swipe}
             compareRegions={compareLegend}
             floodDateLabel={
@@ -1369,8 +1578,6 @@ const MorphismView = () => {
         <SwipeCompare
           active={swipe !== null}
           ready={overlayReady}
-          labelA={swipe?.labelA ?? ""}
-          labelB={swipe?.labelB ?? ""}
           overlayRef={overlayWrapRef}
           clip={clip}
           onClipChange={setClip}
@@ -1380,6 +1587,7 @@ const MorphismView = () => {
             compareRequestIdRef.current += 1;
             setSwipe(null);
             setSwipeB(null);
+            setSwipeBPmUrl(null);
             setFloodCompare(null);
           }}
         />

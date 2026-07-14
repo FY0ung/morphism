@@ -1,17 +1,27 @@
 "use client";
 
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/actionable/Buttons";
 import { Icon } from "@/components/icons";
 import { cn } from "@/lib/utils";
-import type { ChatMessage } from "@/types";
+import { FLOOD_COMPARE_SIDES } from "@/configs/flood-compare";
+import type { ChatMessage, SwipeCompare } from "@/types";
 import ToolSteps from "./tool-steps";
 import ChartCard from "./chart-card";
 
 interface Props {
   message: ChatMessage;
+  /** Re-open a closed swipe-compare (compare result cards only). */
+  onReopenCompare?: (sel: SwipeCompare) => void;
+  /** The swipe-compare currently open on the map (null when closed). */
+  activeSwipe?: SwipeCompare | null;
 }
 
-export default function MessageBubble({ message }: Props) {
+export default function MessageBubble({
+  message,
+  onReopenCompare,
+  activeSwipe,
+}: Props) {
   const { t } = useTranslation();
 
   if (message.role === "user") {
@@ -25,6 +35,15 @@ export default function MessageBubble({ message }: Props) {
   }
 
   const loading = Boolean(message.pending);
+  // Compare result card: offer a re-open action once THIS comparison is not
+  // the one on the map (i.e. the user closed it or opened a different one).
+  const swipeSel = message.swipe;
+  const swipeIsOpen = Boolean(
+    swipeSel &&
+      activeSwipe &&
+      activeSwipe.dateA === swipeSel.dateA &&
+      activeSwipe.dateB === swipeSel.dateB,
+  );
 
   return (
     <div className="w-full max-w-[94%] self-start">
@@ -61,6 +80,44 @@ export default function MessageBubble({ message }: Props) {
         {message.charts?.map((chart) => (
           <ChartCard key={chart.exportName} chart={chart} />
         ))}
+
+        {/* Re-open the swipe comparison this card described. Disabled while it
+            is already open, so the card doubles as the "how do I get back?"
+            affordance after Close comparison. */}
+        {swipeSel && onReopenCompare && !loading && (
+          <div className="mt-3">
+            <Button
+              type="button"
+              color="secondary"
+              size="small"
+              disabled={swipeIsOpen}
+              aria-disabled={swipeIsOpen}
+              onClick={() => onReopenCompare(swipeSel)}
+              className={cn(
+                "focus-visible:outline-2 focus-visible:outline-border-primary-default",
+                swipeIsOpen && "cursor-default opacity-60",
+              )}
+            >
+              <span
+                className={cn(
+                  "size-2.5 rounded-full",
+                  FLOOD_COMPARE_SIDES.a.bg,
+                )}
+                aria-hidden
+              />
+              <span
+                className={cn(
+                  "-ml-1 size-2.5 rounded-full",
+                  FLOOD_COMPARE_SIDES.b.bg,
+                )}
+                aria-hidden
+              />
+              {swipeIsOpen
+                ? t("morphism.swipe.reopenActive")
+                : t("morphism.swipe.reopen")}
+            </Button>
+          </div>
+        )}
 
         {message.result && (
           <div

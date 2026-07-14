@@ -50,7 +50,14 @@ const DropdownRoot: React.FC<{
 
   return (
     <DropdownContext.Provider value={{ open, setOpen }}>
-      <div ref={ref} className={`relative inline-flex ${className ?? ""}`}>
+      <div
+        ref={ref}
+        className={`relative inline-flex ${className ?? ""}`}
+        // Escape closes the menu from anywhere inside (trigger or items).
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+        }}
+      >
         {children}
       </div>
     </DropdownContext.Provider>
@@ -84,7 +91,9 @@ const DropdownTrigger: React.FC<{ children: TriggerChild }> = ({ children }) => 
 const DropdownContent: React.FC<{
   children: React.ReactNode;
   className?: string;
-}> = ({ children, className }) => {
+  /** Horizontal anchor: "start" (left edge, default) or "end" (right edge). */
+  align?: "start" | "end";
+}> = ({ children, className, align = "start" }) => {
   const { open } = useDropdown();
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<"bottom" | "top">("bottom");
@@ -106,9 +115,12 @@ const DropdownContent: React.FC<{
 
   if (!open) return null;
 
+  const side = align === "end" ? "right-0" : "left-0";
+
   return (
     <div
       ref={menuRef}
+      role="menu"
       className={`
         absolute z-30
         min-w-full w-max whitespace-nowrap
@@ -118,8 +130,8 @@ const DropdownContent: React.FC<{
         animate-in fade-in
         ${
           position === "bottom"
-            ? "left-0 top-full mt-2"
-            : "left-0 bottom-full mb-2"
+            ? `${side} top-full mt-2`
+            : `${side} bottom-full mb-2`
         }
         ${className ?? ""}
       `}
@@ -179,18 +191,31 @@ const DropdownItem: React.FC<DropdownItemProps> = ({
 }) => {
   const { setOpen } = useDropdown();
 
+  const activate = () => {
+    onClick?.();
+    setOpen(false);
+  };
+
   return (
     <div
+      role="menuitem"
+      tabIndex={0}
       className={`
         flex items-center justify-between gap-6
         px-3 py-2 rounded-full cursor-pointer
         hover:bg-background-default-hover
+        focus-visible:outline-2 focus-visible:outline-border-primary-default
         whitespace-nowrap  /* ⭐ กัน item แตกบรรทัด */
         ${className ?? ""}
       `}
-      onClick={() => {
-        onClick?.();
-        setOpen(false);
+      onClick={activate}
+      // Keyboard activation (Enter/Space) — menu items must be operable
+      // without a pointer.
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          activate();
+        }
       }}
     >
       <div className="flex items-center gap-2">
