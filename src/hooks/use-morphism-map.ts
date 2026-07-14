@@ -93,24 +93,62 @@ function clipFCVertical(
   lng: number,
   keepLeft: boolean,
 ): FeatureCollection<unknown> {
+  // Clip one polygon (outer ring + holes); null when the outer ring is fully
+  // outside the kept half.
+  const clipPolygon = (rings: number[][][]): number[][][] | null => {
+    const clipped = rings
+      .map((r) => clipRingVertical(r, lng, keepLeft))
+      .filter((r) => r.length >= 4);
+    return clipped.length ? clipped : null;
+  };
+  type Feat = FeatureCollection<unknown>["features"][number];
   return {
     type: "FeatureCollection",
-    features: fc.features.flatMap((f) => {
-      const g = f.geometry as { type: string; coordinates: number[][][] } | null;
-      if (!g || g.type !== "Polygon") return [];
-      const rings = g.coordinates
-        .map((r) => clipRingVertical(r, lng, keepLeft))
-        .filter((r) => r.length >= 4);
-      if (!rings.length) return [];
-      return [
-        {
-          type: "Feature" as const,
-          properties: f.properties,
-          geometry: { type: "Polygon" as const, coordinates: rings },
-        },
-      ];
+    features: fc.features.flatMap((f): Feat[] => {
+      const g = f.geometry as { type: string; coordinates: unknown } | null;
+      if (!g) return [];
+      if (g.type === "Polygon") {
+        const poly = clipPolygon(g.coordinates as number[][][]);
+        if (!poly) return [];
+        return [
+          {
+            type: "Feature",
+            properties: f.properties,
+            geometry: { type: "Polygon", coordinates: poly },
+          } as Feat,
+        ];
+      }
+      // Real Vallaris extents are MultiPolygon — clip each part and keep the
+      // survivors (previously these were dropped entirely → nothing drawn).
+      if (g.type === "MultiPolygon") {
+        const polys = (g.coordinates as number[][][][])
+          .map(clipPolygon)
+          .filter((p): p is number[][][] => p !== null);
+        if (!polys.length) return [];
+        return [
+          {
+            type: "Feature",
+            properties: f.properties,
+            geometry: { type: "MultiPolygon", coordinates: polys },
+          } as Feat,
+        ];
+      }
+      return [];
     }),
   } as FeatureCollection<unknown>;
+}
+
+/**
+ * Per-year data for the flood swipe-compare: the SAME zoom LOD as the rest of
+ * the app — progressively finer HEX aggregations as you zoom. Only hexes are
+ * kept (never the raw nationwide detail), so two years fit in memory and the
+ * per-frame clip stays cheap. `ultra` (fine cells) stands in for the single-date
+ * detail level at high zoom; picked by `applyFloodClip`.
+ */
+export interface FloodCompareData {
+  coarse: FeatureCollection<unknown>;
+  medium: FeatureCollection<unknown>;
+  fine: FeatureCollection<unknown>;
 }
 
 // Single overview marker (z < 6) — the focused dataset's TOTAL count at its
@@ -192,9 +230,15 @@ export function useMorphismMap({
   // layers on the main map (year A = info-blue, year B = secondary-purple), so
   // both years are always visible and distinct regardless of the swipe overlay.
   // Kept in refs so they survive a style swap (re-installed in installLayers).
-  const floodCmpARef = useRef<FeatureCollection<unknown> | null>(null);
-  const floodCmpBRef = useRef<FeatureCollection<unknown> | null>(null);
+  const floodCmpARef = useRef<FloodCompareData | null>(null);
+  const floodCmpBRef = useRef<FloodCompareData | null>(null);
   const floodCmpActiveRef = useRef(false);
+  // High-zoom REAL detail cropped to the current viewport (fetched on demand by
+  // the view). When present + zoomed past the detail band it replaces the hex,
+  // so compare shows real polygons like the single-date view — kept small
+  // (viewport-only) so memory stays bounded regardless of dataset size.
+  const floodCmpDetailARef = useRef<FeatureCollection<unknown> | null>(null);
+  const floodCmpDetailBRef = useRef<FeatureCollection<unknown> | null>(null);
   // Divider position (0–100, % from the left) driving the per-year clip.
   const floodClipRef = useRef(50);
   // Low-zoom flood hex OVERVIEWS (coarse/medium/fine) derived from the active
@@ -308,8 +352,26 @@ export function useMorphismMap({
       if (src && "setData" in src)
         (src as { setData: (d: FeatureCollection<unknown>) => void }).setData(fc);
     };
-    setSrc("flood-a", clipFCVertical(a, lng, true)); // year A → left
-    setSrc("flood-b", clipFCVertical(b, lng, false)); // year B → right
+
+    // SAME zoom bands as the single-date view: coarser hexes when zoomed out,
+    // finer as you zoom in (ultra ≈ the detail band). All levels are small
+    // aggregations, so the vertical clip is cheap every frame.
+    const zoom = m.getZoom();
+    const detailZoom = zoom >= FLOOD_DETAIL_MIN_ZOOM;
+    const levelFor = (d: FloodCompareData): FeatureCollection<unknown> => {
+      if (zoom >= 6) return d.fine; // fine hex is the detail-zoom fallback too
+      if (zoom >= 5) return d.medium;
+      return d.coarse;
+    };
+    // At detail zoom, draw the REAL viewport detail once it's loaded (and has
+    // features); otherwise fall back to the fine hex until the fetch resolves.
+    const geomFor = (
+      d: FloodCompareData,
+      detail: FeatureCollection<unknown> | null,
+    ) =>
+      detailZoom && detail && detail.features.length ? detail : levelFor(d);
+    setSrc("flood-a", clipFCVertical(geomFor(a, floodCmpDetailARef.current), lng, true));
+    setSrc("flood-b", clipFCVertical(geomFor(b, floodCmpDetailBRef.current), lng, false));
   }, []);
 
   // (Re)install every custom source + layer, then re-feed the current scenario
@@ -1019,10 +1081,7 @@ export function useMorphismMap({
   // divider. Pass (null, null) to leave compare and restore the single flood
   // layer.
   const setFloodCompare = useCallback(
-    (
-      a: FeatureCollection<unknown> | null,
-      b: FeatureCollection<unknown> | null,
-    ) => {
+    (a: FloodCompareData | null, b: FloodCompareData | null) => {
       floodCmpARef.current = a;
       floodCmpBRef.current = b;
       floodCmpActiveRef.current = Boolean(a && b);
@@ -1041,9 +1100,24 @@ export function useMorphismMap({
       setVis("flood-line", cmp ? false : layersRef.current.flood.visible);
       if (cmp) applyFloodClip();
       else {
+        floodCmpDetailARef.current = null;
+        floodCmpDetailBRef.current = null;
         setData(m, "flood-a", EMPTY);
         setData(m, "flood-b", EMPTY);
       }
+    },
+    [applyFloodClip],
+  );
+
+  // Feed the high-zoom viewport detail for both sides (or clear with null,null).
+  const setFloodCompareDetail = useCallback(
+    (
+      a: FeatureCollection<unknown> | null,
+      b: FeatureCollection<unknown> | null,
+    ) => {
+      floodCmpDetailARef.current = a;
+      floodCmpDetailBRef.current = b;
+      applyFloodClip();
     },
     [applyFloodClip],
   );
@@ -1121,6 +1195,7 @@ export function useMorphismMap({
     setBufferCenters,
     setFloodCompare,
     setFloodCompareClip,
+    setFloodCompareDetail,
     setDistricts,
     setSubdistricts,
     setCompareMode,

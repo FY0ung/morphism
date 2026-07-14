@@ -11,6 +11,7 @@ import type {
   FeatureCollection,
   HospitalFC,
   BoundaryFC,
+  ChartData,
 } from "@/types";
 import type { FloodScenarioMeta } from "@/types";
 import { FLOOD_SURVEY } from "./flood-survey";
@@ -851,126 +852,168 @@ const scnNation = (t: TFunction, lang: Lang): Scenario => {
   };
 };
 
-/** Flood swipe-compare between two years (LEFT = yearA, RIGHT = yearB). */
-const scnFloodCompare = (
-  yearA: number,
-  yearB: number,
-  t: TFunction,
-): Scenario => {
-  const A = floodStatsForYear(yearA);
-  const B = floodStatsForYear(yearB);
+/** One side of a compare: a resolved observation DATE + a display label. */
+export interface CompareTarget {
+  date: string;
+  label: string;
+}
 
-  const dRai = A.rai - B.rai;
-  const pct = B.rai ? Math.round((dRai / B.rai) * 1000) / 10 : 0;
-  const dDist = A.districts - B.districts;
+/** Resolve one side of a compare (a date, month, or year) → a dated target. */
+function compareTargetFor(
+  part: string,
+  t: TFunction,
+  lang: Lang,
+): CompareTarget | null {
+  const r = resolveFloodDate(part);
+  if (r.matchMode === "exact-date" && r.resolvedDate) {
+    return { date: r.resolvedDate, label: formatDate(r.resolvedDate, lang) };
+  }
+  if (r.matchMode === "month" && r.resolvedMonth) {
+    const d = FLOOD_SNAPSHOT_BY_MONTH[r.resolvedMonth];
+    if (d) return { date: d, label: formatMonth(r.resolvedMonth, lang) };
+  }
+  if (r.matchMode === "year" && r.year != null) {
+    const d = FLOOD_SNAPSHOT_BY_YEAR[String(r.year)];
+    if (d) {
+      const shown = lang === "th" ? toBuddhistYear(r.year) : r.year;
+      return {
+        date: d,
+        label: t("morphism.scenario.flood.yearLabel", { year: String(shown) }),
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve BOTH sides of a compare query. Splits on "vs" / "เทียบ" / "กับ"; each
+ * side may be a year ("2025"), a month ("oct 2025"), or an exact date
+ * ("13 oct 2025"). Falls back to two bare 4-digit years when there is no
+ * splitter. Returns null when two sides can't be resolved.
+ */
+export function resolveCompareTargets(
+  raw: string,
+  t: TFunction,
+  lang: Lang,
+): [CompareTarget, CompareTarget] | null {
+  const parts = raw.split(/\s*(?:\bvs\b|เทียบกับ|เทียบ|กับ)\s*/i);
+  if (parts.length >= 2) {
+    const a = compareTargetFor(parts[0], t, lang);
+    const b = compareTargetFor(parts[parts.length - 1], t, lang);
+    if (a && b) return [a, b];
+  }
+  // Fallback: two bare years anywhere in the text.
+  const years = (raw.match(/\d{4}/g) ?? []).map(Number);
+  if (years.length >= 2) {
+    const a = compareTargetFor(String(years[0]), t, lang);
+    const b = compareTargetFor(String(years[1]), t, lang);
+    if (a && b) return [a, b];
+  }
+  return null;
+}
+
+/**
+ * Build the FINAL compare message + chart from REAL measured areas (km²). Called
+ * by the view once both sides' live extents have been fetched + measured. Only
+ * flooded AREA is reported — the app has no authoritative population/district
+ * dataset, so those (previously mocked) figures are intentionally omitted.
+ */
+export function buildFloodCompareOutcome(
+  args: { labelA: string; labelB: string; km2A: number; km2B: number },
+  t: TFunction,
+): { message: string; charts: ChartData[] } {
+  const { labelA, labelB, km2A, km2B } = args;
+  const raiA = Math.round(km2A * 625); // 1 km² = 625 ไร่
+  const raiB = Math.round(km2B * 625);
+  const dRai = raiA - raiB;
+  const pct = raiB ? Math.round((dRai / raiB) * 1000) / 10 : 0;
   const areaDir = t(
     dRai >= 0
       ? "morphism.scenario.floodCompare.increase"
       : "morphism.scenario.floodCompare.decrease",
   );
-  const distDir = t(
-    dDist >= 0
-      ? "morphism.scenario.floodCompare.increase"
-      : "morphism.scenario.floodCompare.decrease",
-  );
-  const sign = (n: number) => (n >= 0 ? "+" : "−");
-  // The compared years are the raw (Buddhist-Era) numbers from the query — the
-  // swipe legend shows them as-is in both languages, so match that here.
-  const yearLabel = (y: number) =>
-    t("morphism.scenario.flood.yearLabel", { year: String(y) });
-  const yearLabelA = yearLabel(yearA);
-  const yearLabelB = yearLabel(yearB);
 
-  return {
-    id: "floodcmp",
-    mode: "analysis",
-    layers: ["flood"],
-    camera: { center: [100.5, 13.74], zoom: 11, duration: 1100 },
-    timeActive: true,
-    swipe: { yearA, yearB },
-    interim: t("morphism.scenario.floodCompare.interim", {
-      yearLabelA,
-      yearLabelB,
+  const message = [
+    t("morphism.scenario.floodCompare.resultIntro"),
+    ``,
+    t("morphism.scenario.floodCompare.resultLeft", {
+      yearLabel: labelA,
+      rai: raiA.toLocaleString(),
+      km2: Math.round(km2A).toLocaleString(),
     }),
-    steps: [
-      {
-        label: t("morphism.scenario.floodCompare.step1", {
-          yearLabelA,
-          yearLabelB,
-        }),
-        wait: 360,
-      },
-      {
-        label: t("morphism.scenario.floodCompare.step2", {
-          yearA: String(yearA),
-          yearB: String(yearB),
-        }),
-        wait: 470,
-      },
-      { label: t("morphism.scenario.floodCompare.step3"), wait: 480 },
-    ],
-    result: [
-      t("morphism.scenario.floodCompare.resultIntro"),
-      ``,
-      t("morphism.scenario.floodCompare.resultLeft", {
-        yearLabel: yearLabelA,
-        rai: A.rai.toLocaleString(),
-        districts: String(A.districts),
-        pop: A.pop.toLocaleString(),
+    t("morphism.scenario.floodCompare.resultRight", {
+      yearLabel: labelB,
+      rai: raiB.toLocaleString(),
+      km2: Math.round(km2B).toLocaleString(),
+    }),
+    ``,
+    t("morphism.scenario.floodCompare.resultSummary", {
+      areaDir,
+      pct: String(Math.abs(pct)),
+      sign: dRai >= 0 ? "+" : "−",
+      raiDelta: Math.abs(dRai).toLocaleString(),
+    }),
+  ].join("\n");
+
+  const charts: ChartData[] = [
+    {
+      kind: "donut",
+      title: t("morphism.scenario.floodCompare.chartAreaTitle", {
+        yearLabelA: labelA,
+        yearLabelB: labelB,
       }),
-      t("morphism.scenario.floodCompare.resultRight", {
-        yearLabel: yearLabelB,
-        rai: B.rai.toLocaleString(),
-        districts: String(B.districts),
-        pop: B.pop.toLocaleString(),
+      centerLabel: t("morphism.scenario.floodCompare.chartAreaCenter"),
+      rows: [
+        { label: labelA, value: raiA, swatch: FLOOD_COMPARE_SIDES.a.fill },
+        { label: labelB, value: raiB, swatch: FLOOD_COMPARE_SIDES.b.fill },
+      ],
+      exportName: `flood-area-compare`,
+    },
+  ];
+  return { message, charts };
+}
+
+/**
+ * Flood swipe-compare between two dated targets (LEFT = a, RIGHT = b). The
+ * scenario only SETS UP the compare (steps + swipe); the view fetches each
+ * side's REAL extent, measures the flooded area, draws both layers, and reports
+ * the final message + chart via the scenario outcome. `result` here is a
+ * fallback shown only if that async measurement fails.
+ */
+const scnFloodCompare = (
+  a: CompareTarget,
+  b: CompareTarget,
+  t: TFunction,
+): Scenario => ({
+  id: `floodcmp-${a.date}-${b.date}`,
+  mode: "analysis",
+  layers: ["flood"],
+  timeActive: true,
+  timeLabel: `${a.label} · ${b.label}`,
+  swipe: { dateA: a.date, dateB: b.date, labelA: a.label, labelB: b.label },
+  interim: t("morphism.scenario.floodCompare.interim", {
+    yearLabelA: a.label,
+    yearLabelB: b.label,
+  }),
+  steps: [
+    {
+      label: t("morphism.scenario.floodCompare.step1", {
+        yearLabelA: a.label,
+        yearLabelB: b.label,
       }),
-      ``,
-      t("morphism.scenario.floodCompare.resultSummary", {
-        areaDir,
-        pct: String(Math.abs(pct)),
-        sign: sign(dRai),
-        raiDelta: Math.abs(dRai).toLocaleString(),
-        distDir,
-        distDelta: String(Math.abs(dDist)),
+      wait: 360,
+    },
+    {
+      label: t("morphism.scenario.floodCompare.step2", {
+        yearA: a.date,
+        yearB: b.date,
       }),
-    ].join("\n"),
-    charts: [
-      {
-        kind: "donut",
-        title: t("morphism.scenario.floodCompare.chartAreaTitle", {
-          yearLabelA,
-          yearLabelB,
-        }),
-        centerLabel: t("morphism.scenario.floodCompare.chartAreaCenter"),
-        rows: [
-          { label: yearLabelA, value: A.rai, swatch: FLOOD_COMPARE_SIDES.a.fill },
-          { label: yearLabelB, value: B.rai, swatch: FLOOD_COMPARE_SIDES.b.fill },
-        ],
-        exportName: `flood-area-${yearA}-vs-${yearB}`,
-      },
-      {
-        kind: "bar",
-        title: t("morphism.scenario.floodCompare.chartDistrictTitle", {
-          yearLabelA,
-          yearLabelB,
-        }),
-        rows: [
-          {
-            label: yearLabelA,
-            value: A.districts,
-            swatch: FLOOD_COMPARE_SIDES.a.fill,
-          },
-          {
-            label: yearLabelB,
-            value: B.districts,
-            swatch: FLOOD_COMPARE_SIDES.b.fill,
-          },
-        ],
-        exportName: `flood-districts-${yearA}-vs-${yearB}`,
-      },
-    ],
-  };
-};
+      wait: 700,
+    },
+    { label: t("morphism.scenario.floodCompare.step3"), wait: 480 },
+  ],
+  result: t("morphism.scenario.floodCompare.resultIntro"),
+});
 
 /* ──────────────────────────────────────────────────────────────────────────
  * DETERMINISTIC DATE-BASED FLOOD SCENARIO (Vallaris / GISTDA)
@@ -1401,10 +1444,10 @@ export function resolveScenario(
   );
   const isNation = has(q, "ทั่วประเทศ", "ทั้งประเทศ", "ทุกจังหวัด", "nationwide");
 
-  // Flood swipe-compare → needs two years.
+  // Flood swipe-compare → two dated targets (year, month, or exact date).
   if (isCompare && has(q, "น้ำท่วม", "flood")) {
-    const years = (raw.match(/\d{4}/g) ?? []).map(Number);
-    if (years.length >= 2) return scnFloodCompare(years[0], years[1], t);
+    const targets = resolveCompareTargets(raw, t, lang);
+    if (targets) return scnFloodCompare(targets[0], targets[1], t);
   }
   // Region/province comparison → chart.
   if (isCompare) return scnCompareRegions(t, lang);

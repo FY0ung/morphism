@@ -50,8 +50,20 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PAGE_TIMEOUT_MS = 8000;
 const MAX_PAGES = 800;
 const MAX_FEATURES = 80000;
+// Viewport (bbox) requests only ever cover what's on screen — cap them far lower
+// so even if upstream ignores `bbox` the client can never be handed a whole
+// nation of detail (which is what OOM-crashed the compare).
+const MAX_FEATURES_BBOX = 6000;
 const CONCURRENCY = 5; // bounded parallel pages (spec: 4–6)
 const CACHE_TTL_MS = 15 * 60 * 1000;
+
+/** Parse a "w,s,e,n" bbox param → validated tuple, or null. */
+function parseBbox(raw: string | null): [number, number, number, number] | null {
+  if (!raw) return null;
+  const p = raw.split(",").map(Number);
+  if (p.length !== 4 || p.some((n) => !Number.isFinite(n))) return null;
+  return [p[0], p[1], p[2], p[3]];
+}
 
 type RawFloodFeature = FloodFeature & { id?: string | number };
 
@@ -124,12 +136,16 @@ async function paginateAll(
   collectionId: string,
   apiKey: string,
   signal?: AbortSignal,
+  bbox?: [number, number, number, number] | null,
+  maxFeatures: number = MAX_FEATURES,
 ): Promise<{ features: RawFloodFeature[]; truncated: boolean }> {
   const buildUrl = (offset: number) => {
     const u = new URL(`${VALLARIS.baseUrl}/collections/${collectionId}/items`);
     u.searchParams.set("api_key", apiKey);
     u.searchParams.set("limit", String(VALLARIS.pageSize));
     u.searchParams.set("offset", String(offset));
+    // OGC Features bbox filter (lon/lat) — server-side viewport crop.
+    if (bbox) u.searchParams.set("bbox", bbox.join(","));
     return u;
   };
 
@@ -140,17 +156,18 @@ async function paginateAll(
       : (first.features?.length ?? 0);
   const features: RawFloodFeature[] = [...(first.features ?? [])];
 
+  const maxPages = Math.min(Math.ceil(maxFeatures / VALLARIS.pageSize), MAX_PAGES);
   const totalPages = Math.min(
     Math.ceil(numberMatched / VALLARIS.pageSize),
-    MAX_PAGES,
+    maxPages,
   );
   const offsets: number[] = [];
   for (let p = 1; p < totalPages; p++) offsets.push(p * VALLARIS.pageSize);
-  let truncated = Math.ceil(numberMatched / VALLARIS.pageSize) > MAX_PAGES;
+  let truncated = Math.ceil(numberMatched / VALLARIS.pageSize) > maxPages;
 
   let idx = 0;
   const worker = async () => {
-    while (idx < offsets.length && features.length < MAX_FEATURES) {
+    while (idx < offsets.length && features.length < maxFeatures) {
       const pg = await fetchPage(buildUrl(offsets[idx++]), signal);
       if (pg.features?.length) features.push(...pg.features);
     }
@@ -158,7 +175,7 @@ async function paginateAll(
   await Promise.all(
     Array.from({ length: Math.min(CONCURRENCY, offsets.length) }, worker),
   );
-  if (features.length >= MAX_FEATURES) truncated = true;
+  if (features.length >= maxFeatures) truncated = true;
   return { features, truncated };
 }
 
@@ -179,26 +196,30 @@ function respond(payload: FloodApiResponse, status = 200) {
 }
 
 export async function GET(req: Request) {
-  const date = new URL(req.url).searchParams.get("date") ?? "";
+  const params = new URL(req.url).searchParams;
+  const date = params.get("date") ?? "";
   if (!DATE_RE.test(date)) {
     return NextResponse.json(
       { error: "query param `date` (YYYY-MM-DD) is required" },
       { status: 400 },
     );
   }
+  const bbox = parseBbox(params.get("bbox"));
+  // Composite cache key so a viewport crop never collides with the full extent.
+  const key = bbox ? `${date}|${bbox.join(",")}` : date;
 
-  const fresh = cache.get(date);
+  const fresh = cache.get(key);
   if (fresh && Date.now() - fresh.at < CACHE_TTL_MS) return respond(fresh.payload);
 
-  let run = inflight.get(date);
+  let run = inflight.get(key);
   if (!run) {
-    run = buildForDate(date, req.signal)
+    run = buildForDate(date, req.signal, bbox)
       .then((payload) => {
-        cache.set(date, { at: Date.now(), payload });
+        cache.set(key, { at: Date.now(), payload });
         return payload;
       })
-      .finally(() => inflight.delete(date));
-    inflight.set(date, run);
+      .finally(() => inflight.delete(key));
+    inflight.set(key, run);
   }
 
   try {
@@ -222,6 +243,7 @@ export async function GET(req: Request) {
 async function buildForDate(
   date: string,
   signal?: AbortSignal,
+  bbox?: [number, number, number, number] | null,
 ): Promise<FloodApiResponse> {
   const apiKey = process.env.VALLARIS_API_KEY;
   if (apiKey) {
@@ -230,6 +252,8 @@ async function buildForDate(
         collectionFor(date),
         apiKey,
         signal,
+        bbox,
+        bbox ? MAX_FEATURES_BBOX : MAX_FEATURES,
       );
       const byId = new Map<string, RawFloodFeature>();
       raw.forEach((f, i) => {

@@ -81,6 +81,24 @@ export async function getFloodAreas(
 }
 
 /**
+ * CLIENT: fetch the flood detail for ONE date cropped to a viewport bbox
+ * ([w,s,e,n]). Goes straight to the same-origin proxy with a `bbox` filter
+ * (never the R2 full-extent asset), so the result is only what's on screen —
+ * the compare shows real detail at high zoom without loading a whole nation.
+ * Not cached (the bbox changes as the user pans).
+ */
+export async function getFloodDetailInBBox(
+  date: string,
+  bbox: [number, number, number, number],
+  signal?: AbortSignal,
+): Promise<FloodApiResponse> {
+  const url = `${endpoint.flood.byDate(date)}&bbox=${bbox.join(",")}`;
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new ApiError(res.status, `flood bbox proxy failed: ${res.status}`);
+  return (await res.json()) as FloodApiResponse;
+}
+
+/**
  * CLIENT: fetch the pre-baked hex overview (3 LODs) for one date from the R2 CDN.
  * Tiny (a few KB gzipped) vs the full detail — used to paint the flood layer
  * instantly at low zoom while the detail streams in. Returns null when no asset

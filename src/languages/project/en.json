@@ -189,16 +189,15 @@
         "interim": "Analysing the change in flooding, {{yearLabelA}} vs {{yearLabelB}}…",
         "step1": "resolve_periods() → {{yearLabelA}} · {{yearLabelB}}",
         "step2": "load flood_extent({{yearA}}) + flood_extent({{yearB}})",
-        "step3": "zonal_stats(flood) → affected area / districts",
+        "step3": "measure_area(flood) → flooded area per year",
         "resultIntro": "I've opened the left–right flood comparison. Drag the divider on the map to compare the two years.",
-        "resultLeft": "{{yearLabel}} (left): flooded area {{rai}} rai · ~{{districts}} affected districts · about {{pop}} people",
-        "resultRight": "{{yearLabel}} (right): flooded area {{rai}} rai · ~{{districts}} affected districts · about {{pop}} people",
-        "resultSummary": "Summary: flooded area {{areaDir}} {{pct}}% ({{sign}}{{raiDelta}} rai) · affected districts {{distDir}} by {{distDelta}}",
+        "resultLeft": "{{yearLabel}} (left): flooded area {{rai}} rai ({{km2}} km²)",
+        "resultRight": "{{yearLabel}} (right): flooded area {{rai}} rai ({{km2}} km²)",
+        "resultSummary": "Summary: flooded area {{areaDir}} {{pct}}% ({{sign}}{{raiDelta}} rai)",
         "increase": "increased",
         "decrease": "decreased",
         "chartAreaTitle": "Flooded area by year — {{yearLabelA}} vs {{yearLabelB}}",
-        "chartAreaCenter": "Rai (total)",
-        "chartDistrictTitle": "Affected districts — {{yearLabelA}} vs {{yearLabelB}}"
+        "chartAreaCenter": "Rai (total)"
       },
       "flood": {
         "searching": "Searching for flood-area data…",

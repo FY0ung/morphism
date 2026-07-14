@@ -65,12 +65,21 @@ export interface ChatMessage {
 /** ทิศการจัดวางหน้าจอ */
 export type LayoutDirection = "ltr" | "rtl";
 
-/** คู่ปีสำหรับโหมดเทียบน้ำท่วมซ้าย–ขวา (flood swipe) */
+/**
+ * A left–right flood swipe-compare. Each side is a resolved observation DATE
+ * (YYYY-MM-DD) plus a display label — a year query resolves to that year's
+ * representative snapshot, a date query to the exact date, so both share one
+ * shape.
+ */
 export interface SwipeCompare {
-  /** ปี (พ.ศ.) ฝั่งซ้าย — โพลิกอนบนแผนที่ซ้อนที่ถูก clip */
-  yearA: number;
-  /** ปี (พ.ศ.) ฝั่งขวา — โพลิกอนบนแผนที่หลักด้านล่าง */
-  yearB: number;
+  /** Left-side observation date (YYYY-MM-DD). */
+  dateA: string;
+  /** Right-side observation date (YYYY-MM-DD). */
+  dateB: string;
+  /** Left-side display label (e.g. "Year 2025" or "13 October 2025"). */
+  labelA: string;
+  /** Right-side display label. */
+  labelB: string;
 }
 
 /** กล้องแผนที่สำหรับ flyTo (ค่าพอร์ตตรงจาก HTML reference) */
@@ -151,8 +160,12 @@ export interface ScenarioStepReporter {
  */
 export interface ScenarioOutcome {
   ok: boolean;
-  /** Result text to show when `ok` is false (empty / error). */
+  /** Result text to REPLACE the baked scenario result (empty/error, or a
+   *  success message computed from live data such as the flood-compare areas). */
   message?: string;
+  /** Charts computed from live data (e.g. real flood-compare areas), replacing
+   *  the scenario's baked charts when present. */
+  charts?: ChartData[];
 }
 
 /** ผลการตีความคำถาม (deterministic scenario — ดู resolveScenario ใน const.tsx) */

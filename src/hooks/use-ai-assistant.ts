@@ -120,7 +120,7 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
       // its true duration; steps stay "running" until their operation finishes
       // (load = fetch/paginate/dedupe, fit_bounds = until moveend). No fake
       // timers, so the displayed durations are the measured ones. ──────────────
-      if (scenario.flood) {
+      if (scenario.flood || scenario.swipe) {
         const doneMs: number[] = [];
         let doneCount = 0;
         let failedAt: number | null = null;
@@ -156,8 +156,12 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
           const ok = !(outcome && outcome.ok === false);
           patch(aiId, {
             pending: false,
-            text: ok ? scenario.result : outcome?.message ?? scenario.result,
-            charts: ok ? scenario.charts : undefined,
+            // A successful outcome may carry a live-computed message/charts
+            // (e.g. the flood-compare areas); fall back to the baked scenario.
+            text: ok
+              ? outcome?.message ?? scenario.result
+              : outcome?.message ?? scenario.result,
+            charts: ok ? outcome?.charts ?? scenario.charts : undefined,
             steps: buildFloodSteps(),
           });
           setPending(false);

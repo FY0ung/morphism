@@ -12,10 +12,10 @@ import { FLOOD_COMPARE_SIDES } from "@/configs/flood-compare";
 
 interface Props {
   active: boolean;
-  /** ปี (พ.ศ.) ฝั่งซ้าย */
-  yearA: number;
-  /** ปี (พ.ศ.) ฝั่งขวา */
-  yearB: number;
+  /** Left-side label (year or date). */
+  labelA: string;
+  /** Right-side label (year or date). */
+  labelB: string;
   /** เปอร์เซ็นต์ที่เผยฝั่งซ้าย (0–100) */
   clip: number;
   onClipChange: (pct: number) => void;
@@ -32,8 +32,8 @@ const STEP_LARGE = 10;
  */
 export default function SwipeCompare({
   active,
-  yearA,
-  yearB,
+  labelA,
+  labelB,
   clip,
   onClipChange,
   onClose,
@@ -105,11 +105,11 @@ export default function SwipeCompare({
       {/* corner tags labelling each side — dot colour matches the map layer */}
       <span className={`${tagClass} left-3`}>
         <span className={`${dotClass} ${FLOOD_COMPARE_SIDES.a.bg}`} aria-hidden />
-        {t("morphism.swipe.side", { year: yearA })}
+        {labelA}
       </span>
       <span className={`${tagClass} right-3`}>
         <span className={`${dotClass} ${FLOOD_COMPARE_SIDES.b.bg}`} aria-hidden />
-        {t("morphism.swipe.side", { year: yearB })}
+        {labelB}
       </span>
 
       {/* draggable divider (focusable slider) */}

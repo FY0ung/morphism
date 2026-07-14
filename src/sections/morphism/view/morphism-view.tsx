@@ -10,9 +10,11 @@ import {
   useFloodSwipe,
   useMapLayers,
   useMorphismMap,
+  type FloodCompareData,
 } from "@/hooks";
 import {
   getFloodAreas,
+  getFloodDetailInBBox,
   getFloodOverviewAsset,
   getProvinceBoundaries,
   getHospitals,
@@ -43,15 +45,21 @@ import {
   MOCK_BOUNDARIES,
   FLOOD_ANALYSIS_CENTERS,
   FLOOD_ANALYSIS_RADIUS_KM,
-  floodForYear,
+  buildFloodCompareOutcome,
   REGION_TOKEN_VAR,
   REGION_DEFAULT_TOKEN,
   provinceRegion,
   compareLegend as buildCompareLegend,
 } from "../const";
 import { readCssColor } from "@/lib/map-tokens";
-import { bboxOf, distanceKm, normalizeProvinceName } from "@/lib/geo";
-import { buildFloodHexLevels, type FloodHexOverview } from "@/lib/flood-overview";
+import { areaKm2, bboxOf, distanceKm, normalizeProvinceName } from "@/lib/geo";
+import {
+  buildFloodHexLevels,
+  buildFloodSampleIndex,
+  createFloodHexOverview,
+  FLOOD_DETAIL_MIN_ZOOM,
+  type FloodHexOverview,
+} from "@/lib/flood-overview";
 import {
   ChatPanel,
   HistoryControls,
@@ -144,6 +152,10 @@ const MorphismView = () => {
   const floodBoundsRef = useRef<string | null>(null);
   // In-flight flood request controller → aborted when a new scenario starts.
   const floodAbortRef = useRef<AbortController | null>(null);
+  // Flood-compare (swipe) in-flight controller + monotonic id (same pattern as
+  // the single-date flood run, so a superseded compare can't commit late).
+  const compareAbortRef = useRef<AbortController | null>(null);
+  const compareRequestIdRef = useRef(0);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -241,6 +253,7 @@ const MorphismView = () => {
     setBufferCenters,
     setFloodCompare,
     setFloodCompareClip,
+    setFloodCompareDetail,
     setDistricts,
     setSubdistricts,
     setCompareMode,
@@ -480,12 +493,152 @@ const MorphismView = () => {
     ],
   );
 
+  // Flood swipe-compare with REAL data: fetch each year's live extent, measure
+  // the flooded area geodesically, draw both layers, frame the union, and report
+  // the computed message + chart back to the chat. Only real flooded AREA is
+  // reported (the app has no authoritative population/district dataset).
+  const runFloodCompare = useCallback(
+    async (
+      sel: SwipeCompareState,
+      report?: ScenarioStepReporter,
+    ): Promise<ScenarioOutcome> => {
+      const errorMsg = t("morphism.flood.error");
+      compareAbortRef.current?.abort();
+      const controller = new AbortController();
+      compareAbortRef.current = controller;
+      const requestId = ++compareRequestIdRef.current;
+      const stale = () =>
+        controller.signal.aborted || requestId !== compareRequestIdRef.current;
+      const since = (t0: number) => Math.round(performance.now() - t0);
+
+      // Load ONE side: fetch its live extent, measure the real area, and reduce
+      // it to hex LODs for low/mid zoom. The raw detail is measured then dropped
+      // (high-zoom detail comes from the viewport fetch, memory-safe for any
+      // dataset size). One shared index feeds every hex level.
+      const loadSide = async (
+        date: string,
+      ): Promise<{ km2: number; data: FloodCompareData; bbox: BBox } | null> => {
+        const resp = await getFloodAreas(date, controller.signal);
+        if (!resp.features.length) return null;
+        const bbox = bboxOf(resp);
+        if (!bbox) return null;
+        const idx = buildFloodSampleIndex(resp);
+        return {
+          km2: areaKm2(resp),
+          data: {
+            coarse: createFloodHexOverview(idx, 45, "coarse"),
+            medium: createFloodHexOverview(idx, 24, "medium"),
+            fine: createFloodHexOverview(idx, 12, "fine"),
+          },
+          bbox,
+        };
+      };
+
+      report?.done(0, 0); // resolve_periods — instant
+      const tLoad = performance.now();
+      try {
+        // Sequential so only ONE full dataset is parsed at a time (lower peak).
+        const A = await loadSide(sel.dateA);
+        if (stale()) return { ok: true };
+        const B = await loadSide(sel.dateB);
+        if (stale()) return { ok: true };
+        if (!A || !B) {
+          report?.fail(1, since(tLoad));
+          return { ok: false, message: errorMsg };
+        }
+        report?.done(1, since(tLoad));
+
+        const tMeasure = performance.now();
+        setFloodCompare(A.data, B.data);
+        report?.done(2, since(tMeasure));
+
+        // Frame the union of both sides' extents.
+        await fitBoundsAndWait({
+          sw: [Math.min(A.bbox[0], B.bbox[0]), Math.min(A.bbox[1], B.bbox[1])],
+          ne: [Math.max(A.bbox[2], B.bbox[2]), Math.max(A.bbox[3], B.bbox[3])],
+          duration: FLOOD_FIT_DURATION,
+        });
+        if (stale()) return { ok: true };
+
+        const { message, charts } = buildFloodCompareOutcome(
+          { labelA: sel.labelA, labelB: sel.labelB, km2A: A.km2, km2B: B.km2 },
+          t,
+        );
+        showToast(t("morphism.toast.applied"));
+        return { ok: true, message, charts };
+      } catch {
+        if (stale()) return { ok: true };
+        report?.fail(1);
+        return { ok: false, message: errorMsg };
+      }
+    },
+    [setFloodCompare, fitBoundsAndWait, showToast, t],
+  );
+
   const { clip, setClip } = useFloodSwipe({ active: swipe !== null });
 
   // Drive the real-time per-year clip on the map from the divider position.
   useEffect(() => {
     if (swipe) setFloodCompareClip(clip);
   }, [clip, swipe, setFloodCompareClip]);
+
+  // High-zoom REAL detail for compare: when zoomed past the hex→detail band,
+  // fetch BOTH sides' live extent cropped to the CURRENT viewport (server-side
+  // bbox) and draw the real polygons — the SAME LOD boundary as the single-date
+  // view. Debounced on move; only the viewport is loaded so any dataset size is
+  // memory-safe. Below the band it clears back to hex.
+  useEffect(() => {
+    if (!swipe || !map) return;
+    const { dateA, dateB } = swipe;
+    let debounce: ReturnType<typeof setTimeout> | undefined;
+    let abort: AbortController | null = null;
+    const update = () => {
+      if (map.getZoom() < FLOOD_DETAIL_MIN_ZOOM) {
+        setFloodCompareDetail(null, null);
+        return;
+      }
+      const b = map.getBounds();
+      const bbox: [number, number, number, number] = [
+        b.getWest(),
+        b.getSouth(),
+        b.getEast(),
+        b.getNorth(),
+      ];
+      abort?.abort();
+      abort = new AbortController();
+      const sig = abort.signal;
+      void Promise.all([
+        getFloodDetailInBBox(dateA, bbox, sig),
+        getFloodDetailInBBox(dateB, bbox, sig),
+      ])
+        .then(([a, bfc]) => {
+          if (sig.aborted) return;
+          // TEMP diagnostic — confirms the upstream bbox crop returns features
+          // (remove once high-zoom compare detail is verified in the browser).
+          console.log("[compare-detail]", {
+            zoom: map.getZoom().toFixed(1),
+            a: a.features.length,
+            b: bfc.features.length,
+          });
+          setFloodCompareDetail(a, bfc);
+        })
+        .catch((err) => {
+          if (!sig.aborted) console.warn("[compare-detail] fetch failed", err);
+        });
+    };
+    const onMove = () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(update, 300);
+    };
+    map.on("moveend", onMove);
+    update();
+    return () => {
+      map.off("moveend", onMove);
+      if (debounce) clearTimeout(debounce);
+      abort?.abort();
+      setFloodCompareDetail(null, null);
+    };
+  }, [swipe, map, setFloodCompareDetail]);
 
   // Build + draw the region-coloured province polygons for an aggregate scenario
   // from the loaded province GeoJSON. Draw-only (no camera) → returns the polygon
@@ -561,6 +714,8 @@ const MorphismView = () => {
   const clearScene = useCallback(() => {
     floodAbortRef.current?.abort();
     floodRequestIdRef.current += 1;
+    compareAbortRef.current?.abort();
+    compareRequestIdRef.current += 1;
     setFloodMeta(null);
     setFloodAreas(null);
     setFloodPartial(false);
@@ -608,6 +763,31 @@ const MorphismView = () => {
       // so a superseded scenario can never commit late.
       floodAbortRef.current?.abort();
       floodRequestIdRef.current += 1;
+
+      // Flood swipe-compare (two years, REAL data). Reset other overlays, enter
+      // compare mode, then hand the async fetch/measure/draw to runFloodCompare —
+      // whose promise the assistant awaits for the computed result + chart.
+      if (scenario.swipe) {
+        const sel = scenario.swipe;
+        setPointOverride(null);
+        setBufferCenters(null);
+        setAggregate(null);
+        setAggregateState(null);
+        setBoundaries(null);
+        setBoundaryColor(null);
+        setCompareMode(false);
+        setCompareLegend(null);
+        setAdmScope(null);
+        pendingAggScenarioRef.current = null;
+        setFloodMeta(null);
+        setFloodAreas(null);
+        setFloodPartial(false);
+        applyExact(["flood"]);
+        setTimeActive(Boolean(scenario.timeActive));
+        setTimeLabel(scenario.timeActive ? scenario.timeLabel ?? null : null);
+        setSwipe(sel);
+        return runFloodCompare(sel, report);
+      }
 
       // Date-based flood scenario: render the real MultiPolygon extent for a
       // single observation date. Only the flood layer is shown (hospital points
@@ -827,35 +1007,10 @@ const MorphismView = () => {
       // Time filter pill: on with the scenario's label, else cleared.
       setTimeActive(Boolean(scenario.timeActive));
       setTimeLabel(scenario.timeActive ? scenario.timeLabel ?? null : null);
-      // Enter/leave swipe-compare; a non-swipe query closes any open compare.
-      setSwipe(scenario.swipe ?? null);
-      // In compare mode draw BOTH years as their own colour-coded layers on the
-      // main map (year A = blue, year B = purple); clear otherwise.
-      if (scenario.swipe) {
-        setFloodCompare(
-          floodForYear(scenario.swipe.yearA),
-          floodForYear(scenario.swipe.yearB),
-        );
-      } else {
-        setFloodCompare(null, null);
-      }
-      // TEMP debug — verify each side gets distinct, non-empty geometry.
-      if (scenario.swipe) {
-        const a = floodForYear(scenario.swipe.yearA);
-        const b = floodForYear(scenario.swipe.yearB);
-        console.log("[flood-compare]", {
-          yearA: scenario.swipe.yearA,
-          yearB: scenario.swipe.yearB,
-          leftFeatures: a.features.length,
-          rightFeatures: b.features.length,
-        });
-      }
-      // [adm-debug] TEMP — remove after verifying zoom bands / aggregation.
-      console.log("[adm-debug] scenario", {
-        id: scenario.id,
-        mode: scenario.mode,
-        layers: scenario.layers,
-      });
+      // Any non-swipe scenario closes an open compare (swipe is handled earlier
+      // via its own async branch and never reaches here).
+      setSwipe(null);
+      setFloodCompare(null, null);
       showToast(t("morphism.toast.applied"));
     },
     [
@@ -870,6 +1025,7 @@ const MorphismView = () => {
       flyTo,
       hospitalsFC,
       runFloodScenario,
+      runFloodCompare,
       setFloodOverview,
       showToast,
       recordScene,
@@ -1106,11 +1262,14 @@ const MorphismView = () => {
 
         <SwipeCompare
           active={swipe !== null}
-          yearA={swipe?.yearA ?? 0}
-          yearB={swipe?.yearB ?? 0}
+          labelA={swipe?.labelA ?? ""}
+          labelB={swipe?.labelB ?? ""}
           clip={clip}
           onClipChange={setClip}
           onClose={() => {
+            // Abort any in-flight compare fetch so it can't re-draw after close.
+            compareAbortRef.current?.abort();
+            compareRequestIdRef.current += 1;
             setSwipe(null);
             setFloodCompare(null, null);
           }}

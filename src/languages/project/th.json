@@ -189,16 +189,15 @@
         "interim": "กำลังวิเคราะห์การเปลี่ยนแปลงของน้ำท่วม {{yearLabelA}} เทียบ {{yearLabelB}}…",
         "step1": "resolve_periods() → {{yearLabelA}} · {{yearLabelB}}",
         "step2": "load flood_extent({{yearA}}) + flood_extent({{yearB}})",
-        "step3": "zonal_stats(flood) → พื้นที่/เขตที่ได้รับผลกระทบ",
+        "step3": "measure_area(flood) → พื้นที่น้ำท่วมรายปี",
         "resultIntro": "เปิดโหมดเทียบน้ำท่วมซ้าย–ขวาให้แล้วครับ ลากตัวแบ่งกลางแผนที่เพื่อเทียบสองปี",
-        "resultLeft": "{{yearLabel}} (ซ้าย): พื้นที่น้ำท่วม {{rai}} ไร่ · เขตที่ได้รับผลกระทบ ~{{districts}} เขต · ประชากรประมาณ {{pop}} คน",
-        "resultRight": "{{yearLabel}} (ขวา): พื้นที่น้ำท่วม {{rai}} ไร่ · เขตที่ได้รับผลกระทบ ~{{districts}} เขต · ประชากรประมาณ {{pop}} คน",
-        "resultSummary": "สรุป: พื้นที่น้ำท่วม{{areaDir}} {{pct}}% ({{sign}}{{raiDelta}} ไร่) · เขตที่ได้รับผลกระทบ{{distDir}} {{distDelta}} เขต",
+        "resultLeft": "{{yearLabel}} (ซ้าย): พื้นที่น้ำท่วม {{rai}} ไร่ ({{km2}} ตร.กม.)",
+        "resultRight": "{{yearLabel}} (ขวา): พื้นที่น้ำท่วม {{rai}} ไร่ ({{km2}} ตร.กม.)",
+        "resultSummary": "สรุป: พื้นที่น้ำท่วม{{areaDir}} {{pct}}% ({{sign}}{{raiDelta}} ไร่)",
         "increase": "เพิ่มขึ้น",
         "decrease": "ลดลง",
         "chartAreaTitle": "พื้นที่น้ำท่วมรายปี — {{yearLabelA}} vs {{yearLabelB}}",
-        "chartAreaCenter": "ไร่ (รวม)",
-        "chartDistrictTitle": "เขตที่ได้รับผลกระทบ — {{yearLabelA}} vs {{yearLabelB}}"
+        "chartAreaCenter": "ไร่ (รวม)"
       },
       "flood": {
         "searching": "กำลังค้นหาข้อมูลพื้นที่น้ำท่วม…",

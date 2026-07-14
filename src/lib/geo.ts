@@ -210,3 +210,48 @@ export function bboxOf(fc: FeatureCollection<unknown>): BBox | null {
   if (!Number.isFinite(west)) return null;
   return [west, south, east, north];
 }
+
+const R_EARTH_M = 6378137; // WGS84 equatorial radius (m) — matches turf.area.
+
+/** Spherical area of a single linear ring, in m² (signed magnitude taken later). */
+function ringAreaM2(ring: Position[]): number {
+  const n = ring.length;
+  if (n < 3) return 0;
+  let total = 0;
+  for (let i = 0; i < n; i++) {
+    const lowerX = toRad(ring[i][0]);
+    const midY = toRad(ring[(i + 1) % n][1]);
+    const upperX = toRad(ring[(i + 2) % n][0]);
+    total += (upperX - lowerX) * Math.sin(midY);
+  }
+  return (total * R_EARTH_M * R_EARTH_M) / 2;
+}
+
+/** Area of one polygon (outer ring minus holes), in m². */
+function polygonAreaM2(rings: Position[][]): number {
+  if (!rings.length) return 0;
+  let area = Math.abs(ringAreaM2(rings[0]));
+  for (let i = 1; i < rings.length; i++) area -= Math.abs(ringAreaM2(rings[i]));
+  return Math.max(0, area);
+}
+
+/**
+ * Geodesic area of every Polygon / MultiPolygon in a FeatureCollection, in
+ * square kilometres (turf.area algorithm — spherical excess on WGS84). Used for
+ * REAL flooded-area stats from the live Vallaris extents (Polygon + MultiPolygon).
+ */
+export function areaKm2(fc: FeatureCollection<unknown>): number {
+  let m2 = 0;
+  for (const f of fc.features) {
+    const g = f.geometry;
+    if (!g) continue;
+    if (g.type === "Polygon") {
+      m2 += polygonAreaM2(g.coordinates as Position[][]);
+    } else if (g.type === "MultiPolygon") {
+      for (const poly of g.coordinates as Position[][][]) {
+        m2 += polygonAreaM2(poly);
+      }
+    }
+  }
+  return m2 / 1_000_000;
+}

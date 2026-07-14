@@ -151,9 +151,10 @@ export default function ChartCard({ chart }: Props) {
               {chart.centerLabel}
             </text>
           )}
-          {/* legend */}
+          {/* legend — label on top, value+pct on the line below so large real
+              numbers (millions of rai) never collide with the label. */}
           {slices.map((s, i) => {
-            const ly = 44 + i * 26;
+            const ly = 40 + i * 48;
             return (
               <g key={`lg-${s.row.label}`}>
                 <rect
@@ -168,16 +169,15 @@ export default function ChartCard({ chart }: Props) {
                   x={190}
                   y={ly + 6}
                   dominantBaseline="central"
-                  className="fill-text-default-default text-[12px]"
+                  className="fill-text-default-onlight text-[12px]"
                 >
                   {s.row.label}
                 </text>
                 <text
-                  x={width}
-                  y={ly + 6}
-                  textAnchor="end"
+                  x={172}
+                  y={ly + 27}
                   dominantBaseline="central"
-                  className="fill-text-default-default text-[12px] font-semibold"
+                  className="fill-text-default-default text-[13px] font-semibold"
                 >
                   {s.row.value.toLocaleString()} ({s.pct}%)
                 </text>

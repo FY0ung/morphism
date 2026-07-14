@@ -72,7 +72,7 @@ export default function Legend({
               )}
               aria-hidden
             />
-            {t("morphism.legend.floodYear", { year: swipe.yearA })}
+            {swipe.labelA}
           </li>
           <li className="flex items-center gap-2 text-xs text-text-default-default">
             <span
@@ -82,7 +82,7 @@ export default function Legend({
               )}
               aria-hidden
             />
-            {t("morphism.legend.floodYear", { year: swipe.yearB })}
+            {swipe.labelB}
           </li>
         </ul>
       ) : floodDateLabel ? (
