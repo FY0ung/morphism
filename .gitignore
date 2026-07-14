@@ -40,6 +40,10 @@ next-env.d.ts
 .AppleDouble
 .LSOverride
 Icon?
+# ...but `Icon?` matches our `src/components/icons` dir (case-insensitive `?`),
+# which silently dropped it from git and broke the Vercel build. Keep it tracked.
+!src/components/icons/
+!src/components/icons/**
 ._*
 
 # Windows
