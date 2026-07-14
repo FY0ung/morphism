@@ -151,15 +151,44 @@ const MorphismView = () => {
   // only tracks the active years.
   const [swipe, setSwipe] = useState<SwipeCompareState | null>(null);
 
+  // ── Scene-level undo/redo ────────────────────────────────────────────────
+  // The layer-visibility stack (useMapLayers) only rewinds WHICH layers are on —
+  // meaningless when two flood dates share the same layers. This records the
+  // whole APPLIED SCENARIO instead, so undo/redo step between real map states
+  // (flood date, aggregation, compare, camera). `null` = the initial blank map.
+  // Replaying re-runs onScenario, which is deterministic, so the scene is
+  // reconstructed exactly (flood re-fetches + refits).
+  const sceneRef = useRef<{
+    past: (Scenario | null)[];
+    present: Scenario | null;
+    future: (Scenario | null)[];
+  }>({ past: [], present: null, future: [] });
+  // True while an undo/redo is re-applying a scenario, so onScenario skips
+  // recording it as a new history entry.
+  const replayingRef = useRef(false);
+  const [sceneNav, setSceneNav] = useState({ canUndo: false, canRedo: false });
+  const syncSceneNav = useCallback(() => {
+    setSceneNav({
+      canUndo: sceneRef.current.past.length > 0,
+      canRedo: sceneRef.current.future.length > 0,
+    });
+  }, []);
+  const recordScene = useCallback(
+    (scenario: Scenario) => {
+      const s = sceneRef.current;
+      s.past.push(s.present);
+      s.present = scenario;
+      s.future = [];
+      syncSceneNav();
+    },
+    [syncSceneNav],
+  );
+
   const {
     layers,
     visibleCount,
     toggleLayer,
     applyExact,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
   } = useMapLayers();
 
   const { width, active, onPointerDown, onKeyDown } = useChatResizer(direction);
@@ -525,6 +554,39 @@ const MorphismView = () => {
     if (s && boundariesRef.current) drawAggregateBoundaries(s);
   }, [boundariesVersion, drawAggregateBoundaries]);
 
+  // Reset the map to the initial blank state (used when undo rewinds past the
+  // first scenario). Mirrors the resets each scenario branch performs, but
+  // toggles every layer off and drops all overlays.
+  const clearScene = useCallback(() => {
+    floodAbortRef.current?.abort();
+    floodRequestIdRef.current += 1;
+    setFloodMeta(null);
+    setFloodAreas(null);
+    setFloodPartial(false);
+    setPointOverride(null);
+    setBufferCenters(null);
+    setAggregate(null);
+    setAggregateState(null);
+    setBoundaries(null);
+    setBoundaryColor(null);
+    setCompareMode(false);
+    setCompareLegend(null);
+    setAdmScope(null);
+    pendingAggScenarioRef.current = null;
+    setSwipe(null);
+    setFloodCompare(null, null);
+    setTimeActive(false);
+    setTimeLabel(null);
+    applyExact([]);
+  }, [
+    applyExact,
+    setAggregate,
+    setBoundaries,
+    setBufferCenters,
+    setCompareMode,
+    setFloodCompare,
+  ]);
+
   // Apply the assistant's interpretation to the map (deterministic scenario).
   // Returns a Promise for flood scenarios that resolves ONLY after the map has
   // committed the data and finished moving — the assistant awaits it before
@@ -537,6 +599,9 @@ const MorphismView = () => {
       // Unknown/unmatched query: keep the current map result untouched — no
       // layers, no camera move, no toast. (The chat shows the fallback message.)
       if (scenario.mode === "unknown") return;
+
+      // Record this scene for undo/redo (skipped while replaying a history step).
+      if (!replayingRef.current) recordScene(scenario);
 
       // Invalidate any in-flight flood run (aborts its fetch + supersedes its id)
       // so a superseded scenario can never commit late.
@@ -806,10 +871,44 @@ const MorphismView = () => {
       runFloodScenario,
       setFloodOverview,
       showToast,
+      recordScene,
       t,
       lang,
     ],
   );
+
+  // Re-apply a stored scene during undo/redo. `null` = the initial blank map.
+  // Runs with the replay flag set so onScenario doesn't re-record the step.
+  const applyReplay = useCallback(
+    (s: Scenario | null) => {
+      replayingRef.current = true;
+      try {
+        if (s === null) clearScene();
+        else void Promise.resolve(onScenario(s));
+      } finally {
+        replayingRef.current = false;
+      }
+    },
+    [clearScene, onScenario],
+  );
+
+  const sceneUndo = useCallback(() => {
+    const s = sceneRef.current;
+    if (s.past.length === 0) return;
+    s.future.unshift(s.present);
+    s.present = s.past.pop() ?? null;
+    syncSceneNav();
+    applyReplay(s.present);
+  }, [applyReplay, syncSceneNav]);
+
+  const sceneRedo = useCallback(() => {
+    const s = sceneRef.current;
+    if (s.future.length === 0) return;
+    s.past.push(s.present);
+    s.present = s.future.shift() ?? null;
+    syncSceneNav();
+    applyReplay(s.present);
+  }, [applyReplay, syncSceneNav]);
 
   // Resolve queries with the CURRENT language so scenario text (interim, result,
   // steps, chart labels, dates) renders in the active i18n language and
@@ -825,14 +924,16 @@ const MorphismView = () => {
   });
 
   const handleUndo = useCallback(() => {
-    undo();
+    if (!sceneNav.canUndo) return;
+    sceneUndo();
     showToast(t("morphism.toast.undone"));
-  }, [undo, showToast, t]);
+  }, [sceneNav.canUndo, sceneUndo, showToast, t]);
 
   const handleRedo = useCallback(() => {
-    redo();
+    if (!sceneNav.canRedo) return;
+    sceneRedo();
     showToast(t("morphism.toast.redone"));
-  }, [redo, showToast, t]);
+  }, [sceneNav.canRedo, sceneRedo, showToast, t]);
 
   const handleToggleLayer = useCallback(
     (id: LayerId) => toggleLayer(id),
@@ -888,8 +989,8 @@ const MorphismView = () => {
             />
 
             <HistoryControls
-              canUndo={canUndo}
-              canRedo={canRedo}
+              canUndo={sceneNav.canUndo}
+              canRedo={sceneNav.canRedo}
               onUndo={handleUndo}
               onRedo={handleRedo}
             />
