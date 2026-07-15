@@ -12,6 +12,7 @@ import {
   useFloodSwipe,
   useMapLayers,
   useMorphismMap,
+  useSceneHistory,
   type FloodCompareData,
 } from "@/hooks";
 import {
@@ -196,37 +197,18 @@ const MorphismView = () => {
   const cmpDetailIdxARef = useRef<FloodDetailIndex | null>(null);
   const cmpDetailIdxBRef = useRef<FloodDetailIndex | null>(null);
 
-  // ── Scene-level undo/redo ────────────────────────────────────────────────
-  // The layer-visibility stack (useMapLayers) only rewinds WHICH layers are on —
-  // meaningless when two flood dates share the same layers. This records the
-  // whole APPLIED SCENARIO instead, so undo/redo step between real map states
-  // (flood date, aggregation, compare, camera). `null` = the initial blank map.
-  // Replaying re-runs onScenario, which is deterministic, so the scene is
-  // reconstructed exactly (flood re-fetches + refits).
-  const sceneRef = useRef<{
-    past: (Scenario | null)[];
-    present: Scenario | null;
-    future: (Scenario | null)[];
-  }>({ past: [], present: null, future: [] });
-  // True while an undo/redo is re-applying a scenario, so onScenario skips
-  // recording it as a new history entry.
-  const replayingRef = useRef(false);
-  const [sceneNav, setSceneNav] = useState({ canUndo: false, canRedo: false });
-  const syncSceneNav = useCallback(() => {
-    setSceneNav({
-      canUndo: sceneRef.current.past.length > 0,
-      canRedo: sceneRef.current.future.length > 0,
-    });
-  }, []);
-  const recordScene = useCallback(
-    (scenario: Scenario) => {
-      const s = sceneRef.current;
-      s.past.push(s.present);
-      s.present = scenario;
-      s.future = [];
-      syncSceneNav();
-    },
-    [syncSceneNav],
+  // ── Scene-level undo/redo — extracted to useSceneHistory (Phase 3B) ──────
+  // The hook owns the history bookkeeping; HOW a scene is applied stays here
+  // (assigned into applyReplayRef once onScenario/clearScene exist below —
+  // an effect keeps the assignment out of render).
+  const applyReplayRef = useRef<(s: Scenario | null) => void>(() => {});
+  const {
+    nav: sceneNav,
+    record: recordScene,
+    undo: sceneUndo,
+    redo: sceneRedo,
+  } = useSceneHistory(
+    useCallback((s: Scenario | null) => applyReplayRef.current(s), []),
   );
 
   const {
@@ -1067,8 +1049,9 @@ const MorphismView = () => {
       // layers, no camera move, no toast. (The chat shows the fallback message.)
       if (scenario.mode === "unknown") return;
 
-      // Record this scene for undo/redo (skipped while replaying a history step).
-      if (!replayingRef.current) recordScene(scenario);
+      // Record this scene for undo/redo (the hook ignores calls made while a
+      // history step is replaying).
+      recordScene(scenario);
 
       // Invalidate any in-flight flood run (aborts its fetch + supersedes its id)
       // so a superseded scenario can never commit late.
@@ -1318,38 +1301,14 @@ const MorphismView = () => {
     ],
   );
 
-  // Re-apply a stored scene during undo/redo. `null` = the initial blank map.
-  // Runs with the replay flag set so onScenario doesn't re-record the step.
-  const applyReplay = useCallback(
-    (s: Scenario | null) => {
-      replayingRef.current = true;
-      try {
-        if (s === null) clearScene();
-        else void Promise.resolve(onScenario(s));
-      } finally {
-        replayingRef.current = false;
-      }
-    },
-    [clearScene, onScenario],
-  );
-
-  const sceneUndo = useCallback(() => {
-    const s = sceneRef.current;
-    if (s.past.length === 0) return;
-    s.future.unshift(s.present);
-    s.present = s.past.pop() ?? null;
-    syncSceneNav();
-    applyReplay(s.present);
-  }, [applyReplay, syncSceneNav]);
-
-  const sceneRedo = useCallback(() => {
-    const s = sceneRef.current;
-    if (s.future.length === 0) return;
-    s.past.push(s.present);
-    s.present = s.future.shift() ?? null;
-    syncSceneNav();
-    applyReplay(s.present);
-  }, [applyReplay, syncSceneNav]);
+  // Wire the scene-history replay target now that clearScene/onScenario exist.
+  // `null` = the initial blank map. (Assigned in an effect — never in render.)
+  useEffect(() => {
+    applyReplayRef.current = (s: Scenario | null) => {
+      if (s === null) clearScene();
+      else void Promise.resolve(onScenario(s));
+    };
+  }, [clearScene, onScenario]);
 
   // LIVE per-province hospital counts from the loaded dataset — the single
   // source aggregate scenarios (province/region/nationwide/compare) report, so

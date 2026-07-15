@@ -9,5 +9,6 @@ export type { FloodCompareData } from "./use-morphism-map";
 export { useFloodSwipe, clampClip } from "./use-flood-swipe";
 export { useFloodCompareOverlay } from "./use-flood-compare-overlay";
 export { useAdminHierarchy } from "./use-admin-hierarchy";
+export { useSceneHistory } from "./use-scene-history";
 export { useAdminBoundaries } from "./use-admin-boundaries";
 export type { AdminBoundaryLevel } from "./use-admin-boundaries";
