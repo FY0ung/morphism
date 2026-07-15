@@ -18,8 +18,8 @@ export type {
   FloodFeatureProperties,
   FloodFeatureCollection,
   FloodApiResponse,
-  FloodBufferResponse,
-  FloodBufferGeometryAsset,
+  FloodAnalysisCluster,
+  FloodRadiusAnalysisResponse,
 } from "./flood";
 export type {
   BoundaryLevel,

@@ -84,7 +84,7 @@ export function run(): void {
   // ── year-to-year flood comparison (annual cumulative keys) ───────────────
   const ycmp = resolveScenario("เทียบน้ำท่วม 2565 กับ 2568", t, "th");
   assert.equal(ycmp.swipe?.dateA, "2022-10-20"); // year → latest snapshot
-  assert.equal(ycmp.swipe?.dateB, "2025-10-19");
+  assert.equal(ycmp.swipe?.dateB, "2025-12-18"); // 18 Dec 2025 registered
   assert.equal(ycmp.swipe?.keyA, "year-2022");
   assert.equal(ycmp.swipe?.keyB, "year-2025");
 

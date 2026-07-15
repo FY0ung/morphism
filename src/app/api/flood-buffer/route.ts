@@ -8,36 +8,41 @@ import { LruCache } from "@/lib/lru";
 import { normalizeH24, sanitizeFeatureCollection } from "@/lib/normalize";
 import {
   FLOOD_PROXIMITY_RADIUS_KM,
-  hospitalsNearFlood,
   resolveLatestCompleteFlood,
 } from "@/lib/flood-proximity";
+import { analyzeFloodRadius } from "@/lib/flood-radius-analysis";
+import { buildForDate } from "@/lib/server/flood-upstream";
 import type {
   FloodApiResponse,
-  FloodBufferResponse,
+  FloodRadiusAnalysisResponse,
   FloodStats,
   HospitalFC,
   HospitalProps,
 } from "@/types";
 
-// SERVER-ONLY 5 km flood-proximity analysis: hospitals inside a flood polygon
-// or ≤ 5 km from its boundary, for ONE resolved flood snapshot. The browser
-// receives ONLY the matching hospital features + metadata — the full flood
-// GeoJSON never leaves the server (the map renders flood via PMTiles).
+// SERVER-ONLY circular analysis-radius: group the snapshot's flood polygons
+// into clusters, select the major cluster(s), compute one representative
+// center each, generate TRUE GEODESIC 5 km circles, and return the hospitals
+// inside the circle union — the SAME geometry the map displays. The browser
+// receives only circles + centers + matching hospitals + metadata; the full
+// flood GeoJSON never leaves the server (the map renders flood via PMTiles).
 //
 //   GET /api/flood-buffer            → resolve the LATEST COMPLETE dataset
 //   GET /api/flood-buffer?date=YYYY-MM-DD → analyse that exact date
 //
-// Assets are read from the local public/flood-assets copy when present (dev),
-// else fetched from the public R2 asset base. Results are cached (LRU) per
-// date; in-flight requests are deduped.
+// A precomputed asset (flood/<date>/analysis-5km.json.gz, produced by the
+// build:flood pipeline) is served when available; otherwise the analysis runs
+// here once per date (LRU-cached, in-flight-deduped). Flood detail is read
+// from the local asset copy, then R2, then the live upstream loader — never
+// a mock.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const CACHE_MAX = 3;
 
-const cache = new LruCache<string, FloodBufferResponse>(CACHE_MAX);
-const inflight = new Map<string, Promise<FloodBufferResponse>>();
+const cache = new LruCache<string, FloodRadiusAnalysisResponse>(CACHE_MAX);
+const inflight = new Map<string, Promise<FloodRadiusAnalysisResponse>>();
 // Completeness per date is tiny — cache it separately so resolution is cheap.
 const completeCache = new Map<string, boolean | null>();
 
@@ -68,13 +73,26 @@ async function readGzJson<T>(rel: string): Promise<T | null> {
   }
 }
 
+// Detail loaded as a completeness probe is HELD here so the analysis that
+// follows immediately never loads the same snapshot twice.
+const detailHold = new Map<string, FloodApiResponse>();
+
 async function statsComplete(date: string): Promise<boolean | null> {
   if (completeCache.has(date)) return completeCache.get(date) ?? null;
   const stats = await readGzJson<FloodStats>(`flood/${date}/stats.json.gz`);
-  // Older stats lack the flag — treat presence of valid stats as complete-
-  // unknown → conservative false ONLY when flagged; missing stats → null.
-  const value =
+  // Older stats lack the flag — flagged false only when stated.
+  let value: boolean | null =
     stats == null ? null : stats.complete === undefined ? true : stats.complete;
+  if (value === null) {
+    // No published stats yet (a freshly registered dataset): probe the LIVE
+    // upstream once — the loaded detail is held for the analysis right after,
+    // so the snapshot is never fetched twice. No data at all → null (skip).
+    const live = await buildForDate(date);
+    if (live.features.length) {
+      detailHold.set(date, live);
+      value = !live.partial;
+    }
+  }
   completeCache.set(date, value);
   return value;
 }
@@ -103,8 +121,19 @@ async function loadHospitals(): Promise<HospitalFC> {
   return fc;
 }
 
+/** Flood detail: probe hold → local asset → R2 asset → live upstream. */
 async function loadFloodDetail(date: string): Promise<FloodApiResponse | null> {
-  return readGzJson<FloodApiResponse>(`flood/${date}/detail.json.gz`);
+  const held = detailHold.get(date);
+  if (held) {
+    detailHold.delete(date); // consume once — never a long-lived copy
+    return held;
+  }
+  const asset = await readGzJson<FloodApiResponse>(
+    `flood/${date}/detail.json.gz`,
+  );
+  if (asset && asset.features.length) return asset;
+  const live = await buildForDate(date);
+  return live.features.length ? live : null;
 }
 
 /* ── analysis ─────────────────────────────────────────────────────────────── */
@@ -113,7 +142,16 @@ async function analyse(
   date: string,
   complete: boolean,
   resolveMs: number,
-): Promise<FloodBufferResponse> {
+): Promise<FloodRadiusAnalysisResponse> {
+  // Precomputed analysis asset (build:flood pipeline) — served as-is when its
+  // radius matches; only the resolve timing is fresh.
+  const pre = await readGzJson<FloodRadiusAnalysisResponse>(
+    `flood/${date}/analysis-${FLOOD_PROXIMITY_RADIUS_KM}km.json.gz`,
+  );
+  if (pre && pre.version === 1 && pre.radiusKm === FLOOD_PROXIMITY_RADIUS_KM) {
+    return { ...pre, complete: complete && pre.complete, timings: { ...pre.timings, resolveMs } };
+  }
+
   // Load phases are measured individually (they run in parallel; each timing
   // is that phase's own duration) — the chat displays these REAL durations.
   const timed = async <T>(p: Promise<T>): Promise<[T, number]> => {
@@ -127,18 +165,27 @@ async function analyse(
     throw new Error(`flood detail unavailable for ${date}`);
   }
   const tSpatial = Date.now();
-  const result = hospitalsNearFlood(hospitals, flood, FLOOD_PROXIMITY_RADIUS_KM);
+  const result = analyzeFloodRadius(flood, hospitals, {
+    radiusKm: FLOOD_PROXIMITY_RADIUS_KM,
+  });
   const spatialMs = Date.now() - tSpatial;
+  if (!result) throw new Error(`no analysable flood geometry for ${date}`);
+  const fileName = flood.features[0]?.properties?.file_name;
   return {
+    version: 1,
     date,
     radiusKm: FLOOD_PROXIMITY_RADIUS_KM,
+    clusters: result.clusters,
+    circles: result.circles,
+    centers: result.centers,
+    hospitals: result.hospitals,
     count: result.count,
     bounds: result.bounds,
-    hospitals: result.hospitals,
     // Truthful completeness: inherit the dataset's own flag; a truncated
     // source can miss flood polygons, so the analysis is partial too.
     complete: complete && flood.partial !== true,
     generatedAt: new Date().toISOString(),
+    source: { fileName: typeof fileName === "string" ? fileName : undefined },
     timings: { resolveMs, floodLoadMs, hospitalsLoadMs, spatialMs },
   };
 }
@@ -173,7 +220,6 @@ export async function GET(req: Request) {
   } else {
     complete = (await statsComplete(date)) ?? false;
   }
-
   const resolveMs = Date.now() - tResolve;
 
   const hit = cache.get(date);
@@ -193,9 +239,6 @@ export async function GET(req: Request) {
   try {
     return NextResponse.json(await run);
   } catch (err) {
-    return NextResponse.json(
-      { error: String(err), date },
-      { status: 502 },
-    );
+    return NextResponse.json({ error: String(err), date }, { status: 502 });
   }
 }

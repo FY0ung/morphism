@@ -103,10 +103,11 @@ export default function Legend({
           </li>
         </ul>
       ) : floodBuffer ? (
-        /* 5 km flood-proximity analysis — hospitals / flood areas (with the
-           RESOLVED snapshot date) / the 5 km zone, + partial notice. Each row
-           follows its ACTUAL layer toggle, so the legend never lists a layer
-           the map is not currently rendering. */
+        /* Circular 5 km analysis — hospitals / flood areas (with the RESOLVED
+           snapshot date) / analysis radius / analysis center, + partial
+           notice. Each row follows its ACTUAL layer toggle, so the legend
+           never lists a layer the map is not currently rendering (the radius
+           circle and its center marker share the buffer toggle). */
         <ul className="flex flex-col gap-1">
           {layers.hospitals.visible && (
             <li className="flex items-center gap-2 text-xs text-text-default-default">
@@ -127,13 +128,22 @@ export default function Legend({
             </li>
           )}
           {layers.buffer.visible && (
-            <li className="flex items-center gap-2 text-xs text-text-default-default">
-              <span
-                className="size-3 flex-none rounded-sm bg-background-success-default"
-                aria-hidden
-              />
-              {t("morphism.legend.floodBuffer")}
-            </li>
+            <>
+              <li className="flex items-center gap-2 text-xs text-text-default-default">
+                <span
+                  className="size-3 flex-none rounded-full border-2 border-dashed border-border-success-default bg-background-success-light"
+                  aria-hidden
+                />
+                {t("morphism.legend.analysisRadius")}
+              </li>
+              <li className="flex items-center gap-2 text-xs text-text-default-default">
+                <span
+                  className="size-3 flex-none rounded-full border-2 border-border-success-default bg-background-default-default"
+                  aria-hidden
+                />
+                {t("morphism.legend.analysisCenter")}
+              </li>
+            </>
           )}
           {floodBuffer.partial && (
             <li className="text-xs text-text-default-disable">

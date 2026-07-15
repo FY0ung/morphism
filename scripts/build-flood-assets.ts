@@ -36,7 +36,7 @@
  *   GENERATE_SOURCE_BASE               (optional, default http://localhost:3000)
  */
 import { gzipSync } from "node:zlib";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   FLOOD_DATASET_BY_YEAR,
@@ -44,7 +44,10 @@ import {
 } from "@/configs/flood-datasets";
 import { buildFloodHexLevels } from "@/lib/flood-overview";
 import { areaKm2 } from "@/lib/geo";
-import type { FloodApiResponse } from "@/types";
+import { analyzeFloodRadius } from "@/lib/flood-radius-analysis";
+import { FLOOD_PROXIMITY_RADIUS_KM } from "@/lib/flood-proximity";
+import { normalizeH24, sanitizeFeatureCollection } from "@/lib/normalize";
+import type { FloodApiResponse, FloodRadiusAnalysisResponse, HospitalFC, HospitalProps } from "@/types";
 import {
   bboxOfFC,
   buildFloodPMTiles,
@@ -273,6 +276,49 @@ async function publishArtifact(
   return res.ok;
 }
 
+let hospitalsCache: HospitalFC | null = null;
+async function loadHospitals(): Promise<HospitalFC> {
+  if (hospitalsCache) return hospitalsCache;
+  const raw = JSON.parse(
+    await readFile(path.join(process.cwd(), "public", "data", "hospitals.geojson"), "utf8"),
+  ) as unknown;
+  const { fc } = sanitizeFeatureCollection<HospitalProps>(raw, "hospitals(pipeline)", (p) => ({
+    name: typeof p.name === "string" ? p.name : "",
+    h24: normalizeH24(p),
+    province: typeof p.province === "string" ? p.province : undefined,
+  }));
+  hospitalsCache = fc;
+  return fc;
+}
+
+/** Circular analysis-radius asset (clusters → centers → geodesic circles →
+ *  matching hospitals) — the SAME model /api/flood-buffer computes live. */
+async function buildAnalysisAsset(
+  key: string,
+  fc: FloodApiResponse,
+): Promise<FloodRadiusAnalysisResponse | null> {
+  const result = analyzeFloodRadius(fc, await loadHospitals(), {
+    radiusKm: FLOOD_PROXIMITY_RADIUS_KM,
+  });
+  if (!result) return null;
+  const fileName = fc.features[0]?.properties?.file_name;
+  return {
+    version: 1,
+    date: key,
+    radiusKm: FLOOD_PROXIMITY_RADIUS_KM,
+    clusters: result.clusters,
+    circles: result.circles,
+    centers: result.centers,
+    hospitals: result.hospitals,
+    count: result.count,
+    bounds: result.bounds,
+    complete: !fc.partial,
+    generatedAt: new Date().toISOString(),
+    source: { fileName: typeof fileName === "string" ? fileName : undefined },
+    timings: { resolveMs: 0, floodLoadMs: 0, hospitalsLoadMs: 0, spatialMs: 0 },
+  };
+}
+
 async function main() {
   const s3 = dry ? null : await makeClient();
   if (!dry && !s3) {
@@ -348,6 +394,13 @@ async function main() {
       if (kind === "date") {
         const detailGz = gz(JSON.stringify(fc));
         ok = (await publishArtifact(s3, key, "detail.json.gz", detailGz, "application/gzip")) && ok;
+        // Circular analysis-radius metadata (clusters/centers/circles/
+        // hospitals) — precomputed so /api/flood-buffer can serve it as-is.
+        const analysis = await buildAnalysisAsset(key, fc);
+        if (analysis) {
+          const analysisGz = gz(JSON.stringify(analysis));
+          ok = (await publishArtifact(s3, key, `analysis-${FLOOD_PROXIMITY_RADIUS_KM}km.json.gz`, analysisGz, "application/gzip")) && ok;
+        }
       }
 
       if (!ok) {

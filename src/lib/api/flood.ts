@@ -1,6 +1,5 @@
 import { endpoint } from "@/configs/endpoint";
 import {
-  floodBufferGeometryUrl,
   floodDatasetBase,
   floodOverviewUrlByKey,
   floodStatsUrl,
@@ -8,9 +7,8 @@ import {
 import { emptyFC } from "@/types";
 import type {
   FloodApiResponse,
-  FloodBufferGeometryAsset,
-  FloodBufferResponse,
   FloodFC,
+  FloodRadiusAnalysisResponse,
   FloodStats,
 } from "@/types";
 import type { FloodHexOverview } from "@/lib/flood-overview";
@@ -191,20 +189,20 @@ export async function getFloodStats(
 }
 
 /**
- * CLIENT: 5 km flood-proximity analysis. The server resolves the latest
- * COMPLETE dataset when `date` is omitted, runs the spatial query, and returns
- * ONLY the matching hospitals + metadata (no flood geometry). Not cached here —
- * the server route caches per date.
+ * CLIENT: circular 5 km analysis-radius. The server resolves the latest
+ * COMPLETE dataset when `date` is omitted, selects the major flood cluster(s),
+ * and returns circles + centers + the hospitals inside them (no raw flood
+ * geometry). Not cached here — the server route caches per date.
  */
 export async function getFloodBufferAnalysis(
   date?: string,
   signal?: AbortSignal,
-): Promise<FloodBufferResponse> {
+): Promise<FloodRadiusAnalysisResponse> {
   const res = await fetch(endpoint.flood.bufferAnalysis(date), { signal });
   if (!res.ok) {
     throw new ApiError(res.status, `flood-buffer failed: ${res.status}`);
   }
-  return (await res.json()) as FloodBufferResponse;
+  return (await res.json()) as FloodRadiusAnalysisResponse;
 }
 
 /**
@@ -216,25 +214,6 @@ export async function getFloodBufferAnalysis(
  * failure so the caller can degrade (analysis result still renders without
  * the zone).
  */
-const bufferGeomCache = new Map<string, FloodBufferGeometryAsset>();
-
-export async function getFloodBufferGeometry(
-  key: string,
-  radiusKm: number,
-  signal?: AbortSignal,
-): Promise<FloodBufferGeometryAsset | null> {
-  if (!floodDatasetBase()) return null;
-  const cacheKey = `${key}:${radiusKm}`;
-  const hit = bufferGeomCache.get(cacheKey);
-  if (hit) return hit; // tiny (a few KB) — undo/redo replays never refetch
-  const asset = await fetchGzipJson<FloodBufferGeometryAsset>(
-    floodBufferGeometryUrl(key, radiusKm),
-    signal,
-  );
-  bufferGeomCache.set(cacheKey, asset);
-  return asset;
-}
-
 /** CLIENT: hex overview by dataset KEY (covers year keys, which only exist on
  *  the dataset base). Same payload shape as `getFloodOverviewAsset`. */
 export async function getFloodOverviewByKey(

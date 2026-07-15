@@ -16,7 +16,6 @@ import {
 import {
   getFloodAreas,
   getFloodBufferAnalysis,
-  getFloodBufferGeometry,
   getFloodOverviewAsset,
   getFloodOverviewByKey,
   getFloodStats,
@@ -240,6 +239,7 @@ const MorphismView = () => {
     setAggregate,
     setBoundaries,
     setAdminBoundaries,
+    setBufferCenters,
     setFloodCompare,
     setFloodCompareDetail,
     setDistricts,
@@ -377,6 +377,7 @@ const MorphismView = () => {
     setPointOverride(null);
     setBufferAnalysis(null);
     setBufferGeometry(null);
+    setBufferCenters(null);
     setPointsAlwaysVisible(false);
     setAggregate(null);
     setAggregateState(null);
@@ -394,6 +395,7 @@ const MorphismView = () => {
     applyExact,
     setAggregate,
     setBoundaries,
+    setBufferCenters,
     setPointsAlwaysVisible,
     setCompareMode,
   ]);
@@ -646,22 +648,9 @@ const MorphismView = () => {
         report?.done(2, resp.timings.hospitalsLoadMs);
         report?.done(3, resp.timings.spatialMs);
 
-        // ── render: flood snapshot (PMTiles-first) + zone + hospitals ──────
+        // ── render: flood snapshot (PMTiles-first) + circles + hospitals ────
         const tRender = performance.now();
         setFloodStatus("updating-map");
-        // Precomputed dissolved 5 km zone for the SAME snapshot (tiny asset;
-        // built offline by scripts/build-flood-buffer). A miss degrades to the
-        // result without the green zone — never mock geometry, never a
-        // browser-side buffering fallback.
-        const zonePromise = getFloodBufferGeometry(
-          resp.date,
-          resp.radiusKm,
-          controller.signal,
-        ).catch((err: unknown) => {
-          if (err instanceof DOMException && err.name === "AbortError")
-            throw err;
-          return null;
-        });
         let fallbackBB: BBox | null = null;
         let floodShown = false;
         if (floodPmtilesEnabled()) {
@@ -698,52 +687,24 @@ const MorphismView = () => {
           fallbackBB = bboxOf(fc);
         }
 
-        // The 5 km zone geometry (same snapshot, same radius definition).
-        const zone = await zonePromise;
-        if (stale()) return { ok: true };
-        setBufferGeometry(
-          zone
-            ? {
-                type: "FeatureCollection",
-                features: [
-                  {
-                    type: "Feature",
-                    geometry: zone.geometry,
-                    properties: { radiusKm: zone.radiusKm, date: zone.date },
-                  },
-                ],
-              }
-            : null,
-        );
+        // The circular analysis geometry — the SAME circles the hospital
+        // filter used server-side (never a different display geometry).
+        setBufferGeometry(resp.circles);
+        setBufferCenters(resp.centers);
 
         // Hospitals: ONLY the analysis result set; points are the answer, so
         // they render at any zoom (result bounds are far below z11).
         setPointOverride(resp.hospitals);
         setPointsAlwaysVisible(true);
-        applyExact(zone ? ["hospitals", "flood", "buffer"] : ["hospitals", "flood"], true);
+        applyExact(["hospitals", "flood", "buffer"], true);
         setBufferAnalysis({ dateLabel, partial });
         setTimeActive(true);
         setTimeLabel(dateLabel);
 
-        // Camera → the FULL analysis extent: result hospitals ∪ the 5 km zone
-        // (zone ⊇ flood, so the whole picture is framed); step 4 is done only
-        // after the camera finished (moveend).
+        // Camera → the circle bounds (⊇ all matching hospitals); step 4 is
+        // done only after the camera finished (moveend).
         setFloodStatus("moving-camera");
-        const union = (
-          a: BBox | null,
-          b: [number, number, number, number] | null | undefined,
-        ): BBox | null =>
-          !a
-            ? b ?? null
-            : !b
-              ? a
-              : [
-                  Math.min(a[0], b[0]),
-                  Math.min(a[1], b[1]),
-                  Math.max(a[2], b[2]),
-                  Math.max(a[3], b[3]),
-                ];
-        const bb = union(resp.bounds ?? fallbackBB, zone?.bbox);
+        const bb = resp.bounds ?? fallbackBB;
         if (bb) {
           await fitBoundsAndWait({
             sw: [bb[0], bb[1]],
@@ -762,10 +723,16 @@ const MorphismView = () => {
         const message =
           resp.count === 0
             ? t("morphism.scenario.buffer.resultEmpty", { date: dateLabel })
-            : t("morphism.scenario.buffer.result", {
-                count: String(resp.count),
-                date: dateLabel,
-              });
+            : t(
+                resp.clusters.length > 1
+                  ? "morphism.scenario.buffer.resultMulti"
+                  : "morphism.scenario.buffer.result",
+                {
+                  count: String(resp.count),
+                  circles: String(resp.clusters.length),
+                  date: dateLabel,
+                },
+              );
         return { ok: true, message: message + partialSuffix };
       } catch (err) {
         if (stale()) return { ok: true };
@@ -786,6 +753,7 @@ const MorphismView = () => {
       commitFloodTiles,
       fitBoundsAndWait,
       lang,
+      setBufferCenters,
       setFloodOverview,
       setPointsAlwaysVisible,
       showToast,
@@ -882,6 +850,7 @@ const MorphismView = () => {
     setPointOverride(null);
     setBufferAnalysis(null);
     setBufferGeometry(null);
+    setBufferCenters(null);
     setPointsAlwaysVisible(false);
     setAggregate(null);
     setAggregateState(null);
@@ -900,6 +869,7 @@ const MorphismView = () => {
     abortAndClearCompare,
     setAggregate,
     setBoundaries,
+    setBufferCenters,
     setPointsAlwaysVisible,
     setCompareMode,
     commitFloodTiles,
@@ -971,6 +941,7 @@ const MorphismView = () => {
         setPointOverride(null);
         setBufferAnalysis(null);
         setBufferGeometry(null);
+        setBufferCenters(null);
         setPointsAlwaysVisible(false);
         setAggregate(null);
         setAggregateState(null);
@@ -1006,6 +977,7 @@ const MorphismView = () => {
       floodBoundsRef.current = null;
       setBufferAnalysis(null);
       setBufferGeometry(null);
+      setBufferCenters(null);
       setPointsAlwaysVisible(false);
 
       if (scenario.mode === "aggregate") {

@@ -1,4 +1,4 @@
-import type { FeatureCollection, Feature, Geometry } from "./geo";
+import type { FeatureCollection, Feature } from "./geo";
 
 // DTO ของชั้น "พื้นที่น้ำท่วม" — โพลิกอนพร้อมระดับความรุนแรง (mock ราย-ปี)
 export interface FloodProps {
@@ -64,21 +64,46 @@ export interface FloodApiResponse extends FloodFeatureCollection {
   partial: boolean;
 }
 
-// ── 5 km flood-proximity analysis (/api/flood-buffer) ────────────────────────
+// ── 5 km circular analysis-radius (/api/flood-buffer) ───────────────────────
 import type { HospitalFC } from "./hospital";
 
-export interface FloodBufferResponse {
+/** One selected flood cluster of the analysis (center is [lng, lat]). */
+export interface FloodAnalysisCluster {
+  id: number;
+  center: [number, number];
+  /** Real flooded area of the cluster (km², from upstream f_area). */
+  areaKm2: number;
+  featureCount: number;
+}
+
+/**
+ * Result of the circular analysis-radius model (server-computed or served as
+ * the precomputed asset flood/<date>/analysis-<radius>km.json.gz): major flood
+ * cluster(s) → representative center(s) → true geodesic 5 km circle(s) →
+ * hospitals inside the union of those circles. The DISPLAYED circles and the
+ * hospital filter use the SAME geometry definition.
+ */
+export interface FloodRadiusAnalysisResponse {
+  version: 1;
   /** Resolved flood snapshot date (YYYY-MM-DD) — never silently substituted. */
   date: string;
   radiusKm: number;
-  count: number;
-  /** BBox [w,s,e,n] of matching hospitals (null when count = 0). */
-  bounds: [number, number, number, number] | null;
-  /** Matching hospitals only (risk-flagged, with real distanceKm each). */
+  clusters: FloodAnalysisCluster[];
+  /** One geodesic circle Polygon per cluster ({ clusterId, radiusKm }). */
+  circles: FeatureCollection;
+  /** One center Point per cluster ({ clusterId }). */
+  centers: FeatureCollection;
+  /** Hospitals inside the circle union (risk-flagged, distanceKm = to the
+   *  nearest selected center). */
   hospitals: HospitalFC;
+  count: number;
+  /** [w,s,e,n] over the circles (⊇ every matching hospital). */
+  bounds: [number, number, number, number];
   /** False when the source flood dataset was truncated (partial notice). */
   complete: boolean;
   generatedAt: string;
+  /** Source metadata (dataset key + acquisition file_name of the snapshot). */
+  source: { fileName?: string };
   /** Real per-phase durations measured ON THE SERVER (ms) — the chat's tool
    *  steps display these, never fabricated numbers. */
   timings: {
@@ -87,24 +112,4 @@ export interface FloodBufferResponse {
     hospitalsLoadMs: number;
     spatialMs: number;
   };
-}
-
-/**
- * Precomputed dissolved buffer GEOMETRY asset
- * (flood/<date>/buffer-<radius>km.json.gz, built by scripts/build-flood-buffer).
- * ONE MultiPolygon derived from the SAME flood snapshot + 5 km definition as
- * the hospital spatial query — the map renders it as the green analysis zone.
- */
-export interface FloodBufferGeometryAsset {
-  version: 1;
-  date: string;
-  radiusKm: number;
-  /** Grid resolution the contour was traced at (km). */
-  cellKm: number;
-  /** Conservative OUTWARD threshold margin (km) — the zone never cuts inside
-   *  the true radius; it may extend outward by ≤ margin + simplify tolerance. */
-  marginKm: number;
-  bbox: [number, number, number, number];
-  generatedAt: string;
-  geometry: Geometry;
 }

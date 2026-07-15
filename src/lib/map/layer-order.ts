@@ -38,11 +38,10 @@ export const MORPHISM_LAYER_ORDER: string[] = [
   "adm-subdistrict-line",
   "adm-district-fill",
   "adm-district-line",
-  // 5 km analysis zone (dissolved buffer around the flood polygons): fill +
-  // outline sit UNDER the flood extent so the blue flood data is never
-  // obscured — the green zone reads as context around it.
+  // 5 km ANALYSIS RADIUS circle fill sits UNDER the flood extent so the blue
+  // flood data is never obscured; the dashed outline + center marker are
+  // ordered ABOVE the flood (see below), under the hospital points.
   "buffer",
-  "buffer-line",
   // Single-date flood extent (hex overview + detail) sits ABOVE every
   // administrative fill so it can never be hidden behind an admin polygon
   // at any zoom. Overview fills under detail fill; lines above.
@@ -57,6 +56,10 @@ export const MORPHISM_LAYER_ORDER: string[] = [
   ...pmLayerIds(FLOOD_PM),
   ...FLOOD_CMP_A_LAYERS,
   ...pmLayerIds(FLOOD_A_PM),
+  // Analysis radius outline + center marker ABOVE the flood polygons.
+  "buffer-line",
+  "buffer-center-ring",
+  "buffer-center",
   "hospitals",
   // Count labels stay on top so numbers are never hidden by fills/points.
   "agg-count",
