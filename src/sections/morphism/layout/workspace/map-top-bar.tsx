@@ -3,7 +3,6 @@
 import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/icons";
 import { IconButton } from "@/components/actionable/IconButtons";
-import { Button } from "@/components/actionable/Buttons";
 
 interface Props {
   timeActive: boolean;
@@ -23,11 +22,14 @@ export default function MapTopBar({
 
   return (
     <div className="pointer-events-none absolute inset-x-4 top-4 z-50 flex items-start gap-2">
-      <Button
-        color="default"
-        variant="filled"
-        size="medium"
-        className="pointer-events-auto border border-border-default-default"
+      {/* Status pill, NOT a control: it never had an onClick, and rendering it
+          as <Button> nested the real clear-IconButton <button> inside another
+          <button> — invalid HTML that caused a React hydration error. A <div>
+          with the exact same utility classes (Button filled/default/medium)
+          keeps the appearance identical; the clear button stays a real button. */}
+      <div
+        className="inline-flex text-nowrap gap-2 items-center justify-center rounded-full bg-background-default-default text-text-default-default hover:bg-background-default-hover h-10 px-4 text-sm pointer-events-auto border border-border-default-default"
+        role="status"
       >
         <Icon name="Clock" />
         <span>{timeActive && timeLabel ? timeLabel : t("morphism.timeAll")}</span>
@@ -46,7 +48,7 @@ export default function MapTopBar({
             <Icon name="XClose" />
           </IconButton>
         )}
-      </Button>
+      </div>
     </div>
   );
 }
