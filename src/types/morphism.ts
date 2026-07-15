@@ -181,6 +181,9 @@ export interface ScenarioStepReporter {
   /** Mark step `index` FAILED/empty — the map did not get usable data, so the
    *  chat must not report success. Stops revealing further steps. */
   fail: (index: number, ms?: number) => void;
+  /** Replace a step's label once runtime info exists (e.g. the RESOLVED flood
+   *  date) — keeps the visible steps truthful for runtime-resolved datasets. */
+  relabel?: (index: number, label: string) => void;
 }
 
 /**
@@ -234,6 +237,8 @@ export interface Scenario {
   swipe?: SwipeCompare;
   /** โหมดน้ำท่วมตามวันที่ (deterministic date scenario) — ถ้ามี */
   flood?: FloodScenarioMeta;
+  /** Server-side spatial analysis scenario (dataset resolved at RUNTIME). */
+  analysis?: "flood-buffer";
   /** ข้อความระหว่างประมวลผล (โชว์ก่อน steps เสร็จ) */
   interim: string;
   /** ลำดับขั้นตอนเครื่องมือ (ป้าย + เวลา) */

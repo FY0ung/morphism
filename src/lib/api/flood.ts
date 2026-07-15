@@ -5,7 +5,7 @@ import {
   floodStatsUrl,
 } from "@/configs/flood-data";
 import { emptyFC } from "@/types";
-import type { FloodApiResponse, FloodFC, FloodStats } from "@/types";
+import type { FloodApiResponse, FloodBufferResponse, FloodFC, FloodStats } from "@/types";
 import type { FloodHexOverview } from "@/lib/flood-overview";
 import { LruCache } from "@/lib/lru";
 import { isValidFeature } from "@/lib/normalize";
@@ -181,6 +181,23 @@ export async function getFloodStats(
   const stats = await fetchGzipJson<FloodStats>(floodStatsUrl(key), signal);
   statsCache.set(key, stats);
   return stats;
+}
+
+/**
+ * CLIENT: 5 km flood-proximity analysis. The server resolves the latest
+ * COMPLETE dataset when `date` is omitted, runs the spatial query, and returns
+ * ONLY the matching hospitals + metadata (no flood geometry). Not cached here —
+ * the server route caches per date.
+ */
+export async function getFloodBufferAnalysis(
+  date?: string,
+  signal?: AbortSignal,
+): Promise<FloodBufferResponse> {
+  const res = await fetch(endpoint.flood.bufferAnalysis(date), { signal });
+  if (!res.ok) {
+    throw new ApiError(res.status, `flood-buffer failed: ${res.status}`);
+  }
+  return (await res.json()) as FloodBufferResponse;
 }
 
 /** CLIENT: hex overview by dataset KEY (covers year keys, which only exist on

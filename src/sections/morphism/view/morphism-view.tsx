@@ -15,12 +15,14 @@ import {
 } from "@/hooks";
 import {
   getFloodAreas,
+  getFloodBufferAnalysis,
   getFloodOverviewAsset,
   getFloodOverviewByKey,
   getFloodStats,
   getProvinceBoundaries,
   getHospitals,
 } from "@/lib/api";
+import { ApiError } from "@/lib/api/client";
 import { floodPmtilesEnabled, floodPmtilesUrl } from "@/configs/flood-data";
 import { endpoint } from "@/configs/endpoint";
 import { CAMERA } from "@/configs/motion";
@@ -44,10 +46,6 @@ import type {
 import {
   resolveScenario,
   MOCK_HOSPITALS,
-  MOCK_BUFFER,
-  MOCK_BUFFER_CENTERS,
-  FLOOD_ANALYSIS_CENTERS,
-  FLOOD_ANALYSIS_RADIUS_KM,
   buildFloodCompareOutcome,
   REGION_TOKEN_VAR,
   REGION_DEFAULT_TOKEN,
@@ -56,11 +54,9 @@ import {
 } from "../const";
 import { readCssColor } from "@/lib/map-tokens";
 import { bboxOf, normalizeProvinceName } from "@/lib/geo";
+import { formatDate } from "@/lib/flood-date";
 import { buildProvinceCounts } from "@/lib/hospital-stats";
-import {
-  filterHospitalsByScope,
-  filterHospitalsInBuffer,
-} from "@/lib/hospital-filter";
+import { filterHospitalsByScope } from "@/lib/hospital-filter";
 import {
   buildFloodHexLevels,
   type FloodHexOverview,
@@ -138,6 +134,12 @@ const MorphismView = () => {
   // For the flood-buffer scenario: only the hospitals inside the 5 km buffer
   // (flagged risk → red). Null = feed the full dataset.
   const [pointOverride, setPointOverride] = useState<HospitalFC | null>(null);
+  // Active 5 km flood-proximity analysis (REAL server-side result): resolved
+  // snapshot date label + partial flag — drives the legend. Null = not active.
+  const [bufferAnalysis, setBufferAnalysis] = useState<{
+    dateLabel: string;
+    partial: boolean;
+  } | null>(null);
   // Live flood areas for the active date-based flood scenario (Vallaris via the
   // /api/flood proxy). Null → the flood source is EMPTY (no mock geometry; the
   // layer renders nothing until real data is committed).
@@ -189,9 +191,11 @@ const MorphismView = () => {
   // Memoised so the map's data-sync effect only fires when the data changes.
   const mapData = useMemo(
     () => ({
-      // Buffer scenario feeds only the in-radius (risk) subset; otherwise full.
+      // Buffer scenario feeds only the analysis-result subset; otherwise full.
       hospitals: pointOverride ?? hospitalsFC ?? MOCK_HOSPITALS,
-      buffer: MOCK_BUFFER,
+      // No mock buffer geometry — the 5 km analysis is computed server-side and
+      // returns hospital points only (a nationwide 5 km union isn't drawable).
+      buffer: EMPTY_FC,
       // Live flood areas only — real data flow, no mock fallback.
       flood: floodAreas ?? EMPTY_FC,
     }),
@@ -223,6 +227,7 @@ const MorphismView = () => {
     flyTo,
     fitBounds,
     fitBoundsAndWait,
+    setPointsAlwaysVisible,
     commitFloodExtent,
     commitFloodTiles,
     setFloodOverview,
@@ -366,6 +371,8 @@ const MorphismView = () => {
     floodRequestIdRef.current += 1;
     setPointOverride(null);
     setBufferCenters(null);
+    setBufferAnalysis(null);
+    setPointsAlwaysVisible(false);
     setAggregate(null);
     setAggregateState(null);
     setBoundaries(null);
@@ -383,6 +390,7 @@ const MorphismView = () => {
     setAggregate,
     setBoundaries,
     setBufferCenters,
+    setPointsAlwaysVisible,
     setCompareMode,
   ]);
 
@@ -602,6 +610,139 @@ const MorphismView = () => {
     ],
   );
 
+  // REAL 5 km flood-proximity analysis. ONE server request
+  // (/api/flood-buffer) resolves the LATEST COMPLETE flood snapshot, loads the
+  // flood detail + hospitals server-side and runs the spatial query — the
+  // browser receives ONLY the matching hospital points + metadata. The flood
+  // layer renders via PMTiles (never the full GeoJSON here). Step durations
+  // 0–3 are the server's own measurements; step 4 (render + camera) is
+  // measured here and reported only after moveend — no fake success.
+  const runBufferScenario = useCallback(
+    async (report?: ScenarioStepReporter): Promise<ScenarioOutcome> => {
+      const controller = new AbortController();
+      floodAbortRef.current = controller;
+      const requestId = ++floodRequestIdRef.current;
+      const stale = () =>
+        controller.signal.aborted || requestId !== floodRequestIdRef.current;
+
+      setFloodStatus("loading-data");
+      try {
+        const resp = await getFloodBufferAnalysis(undefined, controller.signal);
+        if (stale()) return { ok: true };
+        const dateLabel = formatDate(resp.date, lang);
+        const partial = !resp.complete;
+        // Truthful steps: relabel load_flood_event with the RESOLVED date,
+        // then report the server-measured phase durations.
+        report?.relabel?.(
+          1,
+          t("morphism.scenario.buffer.step2Resolved", { date: resp.date }),
+        );
+        report?.done(0, resp.timings.resolveMs);
+        report?.done(1, resp.timings.floodLoadMs);
+        report?.done(2, resp.timings.hospitalsLoadMs);
+        report?.done(3, resp.timings.spatialMs);
+
+        // ── render: flood snapshot (PMTiles-first) + result hospitals ──────
+        const tRender = performance.now();
+        setFloodStatus("updating-map");
+        let fallbackBB: BBox | null = null;
+        let floodShown = false;
+        if (floodPmtilesEnabled()) {
+          try {
+            const [stats, pmOverview] = await Promise.all([
+              getFloodStats(resp.date, controller.signal),
+              getFloodOverviewByKey(resp.date, controller.signal),
+            ]);
+            if (stale()) return { ok: true };
+            if (stats && stats.featureCount > 0 && pmOverview) {
+              setFloodOverview(pmOverview);
+              setFloodAreas(null);
+              setFloodPartial(partial);
+              commitFloodTiles(floodPmtilesUrl(resp.date));
+              fallbackBB = stats.bbox;
+              floodShown = true;
+            }
+          } catch (err) {
+            if (err instanceof DOMException && err.name === "AbortError")
+              throw err;
+            // asset miss → geojson fallback below
+          }
+        }
+        if (!floodShown) {
+          // Fallback (pmtiles disabled / asset miss): same real dataset via
+          // the existing detail flow — still never mock geometry.
+          const fc = await getFloodAreas(resp.date, controller.signal);
+          if (stale()) return { ok: true };
+          if (!fc.features.length) throw new Error("flood dataset empty");
+          setFloodOverview(buildFloodHexLevels(fc));
+          setFloodAreas(fc);
+          setFloodPartial(partial);
+          commitFloodExtent(fc);
+          fallbackBB = bboxOf(fc);
+        }
+
+        // Hospitals: ONLY the analysis result set; points are the answer, so
+        // they render at any zoom (result bounds are far below z11).
+        setPointOverride(resp.hospitals);
+        setPointsAlwaysVisible(true);
+        applyExact(["hospitals", "flood"], true);
+        setBufferAnalysis({ dateLabel, partial });
+        setTimeActive(true);
+        setTimeLabel(dateLabel);
+
+        // Camera → analysis-result bounds (flood bbox when the result is
+        // empty); step 4 is done only after the camera finished (moveend).
+        setFloodStatus("moving-camera");
+        const bb = resp.bounds ?? fallbackBB;
+        if (bb) {
+          await fitBoundsAndWait({
+            sw: [bb[0], bb[1]],
+            ne: [bb[2], bb[3]],
+            duration: FLOOD_FIT_DURATION,
+          });
+        }
+        if (stale()) return { ok: true };
+        report?.done(4, Math.round(performance.now() - tRender));
+        setFloodStatus("complete");
+        showToast(t("morphism.toast.applied"));
+
+        const partialSuffix = partial
+          ? ` ${t("morphism.scenario.buffer.partialNotice")}`
+          : "";
+        const message =
+          resp.count === 0
+            ? t("morphism.scenario.buffer.resultEmpty", { date: dateLabel })
+            : t("morphism.scenario.buffer.result", {
+                count: String(resp.count),
+                date: dateLabel,
+              });
+        return { ok: true, message: message + partialSuffix };
+      } catch (err) {
+        if (stale()) return { ok: true };
+        report?.fail(0);
+        setFloodStatus("error"); // keep previous valid map state
+        const noDataset = err instanceof ApiError && err.status === 503;
+        return {
+          ok: false,
+          message: noDataset
+            ? t("morphism.scenario.buffer.errorNoDataset")
+            : t("morphism.scenario.buffer.errorLoad"),
+        };
+      }
+    },
+    [
+      applyExact,
+      commitFloodExtent,
+      commitFloodTiles,
+      fitBoundsAndWait,
+      lang,
+      setFloodOverview,
+      setPointsAlwaysVisible,
+      showToast,
+      t,
+    ],
+  );
+
   // Reopen from the chat compare-result card (after "Close comparison").
   const reopenCompare = useCallback(
     (sel: SwipeCompareState) => {
@@ -690,6 +831,8 @@ const MorphismView = () => {
     setFloodPartial(false);
     setPointOverride(null);
     setBufferCenters(null);
+    setBufferAnalysis(null);
+    setPointsAlwaysVisible(false);
     setAggregate(null);
     setAggregateState(null);
     setBoundaries(null);
@@ -708,6 +851,7 @@ const MorphismView = () => {
     setAggregate,
     setBoundaries,
     setBufferCenters,
+    setPointsAlwaysVisible,
     setCompareMode,
     commitFloodTiles,
   ]);
@@ -744,6 +888,30 @@ const MorphismView = () => {
         return openCompare(scenario.swipe, report);
       }
 
+      // REAL 5 km flood-proximity analysis (dataset resolved at RUNTIME on the
+      // server — never a baked date/count). runBufferScenario owns the whole
+      // request → render → camera flow; its promise carries the live result.
+      if (scenario.analysis === "flood-buffer") {
+        setBufferCenters(null);
+        setAggregate(null);
+        setAggregateState(null);
+        setBoundaries(null);
+        setBoundaryColor(null);
+        setCompareMode(false);
+        setCompareLegend(null);
+        setAdmScope(null);
+        pendingAggScenarioRef.current = null;
+        detachCompare();
+        setFloodMeta(null);
+        setFloodAreas(null);
+        setFloodPartial(false);
+        floodBoundsRef.current = null;
+        // Hide overlays while loading — layers are revealed atomically once
+        // the real analysis result is committed (no camera move here).
+        applyExact([]);
+        return runBufferScenario(report);
+      }
+
       // Date-based flood scenario: render the real MultiPolygon extent for a
       // single observation date. Only the flood layer is shown (hospital points
       // stay hidden). The whole fetch → commit → camera flow is owned by
@@ -752,6 +920,8 @@ const MorphismView = () => {
         const meta = scenario.flood;
         setPointOverride(null);
         setBufferCenters(null);
+        setBufferAnalysis(null);
+        setPointsAlwaysVisible(false);
         setAggregate(null);
         setAggregateState(null);
         setBoundaries(null);
@@ -777,13 +947,15 @@ const MorphismView = () => {
       }
       // Any non-flood scenario leaves date-based flood mode: release the flood
       // source (it becomes empty — no mock geometry), deactivate the low-zoom
-      // overview and reset the machine.
+      // overview and reset the machine (incl. the 5 km analysis result).
       setFloodMeta(null);
       setFloodAreas(null);
       setFloodPartial(false);
       setFloodOverview(null);
       setFloodStatus("idle");
       floodBoundsRef.current = null;
+      setBufferAnalysis(null);
+      setPointsAlwaysVisible(false);
 
       if (scenario.mode === "aggregate") {
         // Province-summary view. Hospitals are marked "desired" so the zoom gate
@@ -858,30 +1030,7 @@ const MorphismView = () => {
             : null,
         );
 
-        if (scenario.id === "buffer5km") {
-          // Spatial query: keep only hospitals within the 5 km buffer (red risk
-          // points); draw the buffer centre; fit the camera to the buffer.
-          // Filtering is pure data work in lib/hospital-filter (testable).
-          const source = hospitalsFC ?? MOCK_HOSPITALS;
-          setPointOverride(
-            filterHospitalsInBuffer(
-              source,
-              FLOOD_ANALYSIS_CENTERS,
-              FLOOD_ANALYSIS_RADIUS_KM,
-            ),
-          );
-          setBufferCenters(MOCK_BUFFER_CENTERS);
-          const bb = bboxOf(MOCK_BUFFER);
-          if (bb) {
-            fitBounds({
-              sw: [bb[0], bb[1]],
-              ne: [bb[2], bb[3]],
-              duration: scenario.camera?.duration ?? 1100,
-            });
-          } else if (scenario.camera) {
-            flyTo(scenario.camera);
-          }
-        } else if (scenario.hospitalScope) {
+        if (scenario.hospitalScope) {
           // POI search scoped to a province (+ 24h): filter province → 24h, then
           // render the filtered points and fit the camera to them. NO aggregate.
           const scope = scenario.hospitalScope;
@@ -963,6 +1112,8 @@ const MorphismView = () => {
       flyTo,
       hospitalsFC,
       runFloodScenario,
+      runBufferScenario,
+      setPointsAlwaysVisible,
       setFloodOverview,
       showToast,
       recordScene,
@@ -1173,6 +1324,7 @@ const MorphismView = () => {
               floodStatus === "complete" ? floodMeta?.dateLabel ?? null : null
             }
             floodPartial={floodPartial}
+            floodBuffer={bufferAnalysis}
           />
 
         {/* Lazy ADM2/ADM3 status — loading / error(fallback) / empty */}

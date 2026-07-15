@@ -35,6 +35,9 @@ interface Props {
   floodDateLabel?: string | null;
   /** True when the flood data shown is a partial sample. */
   floodPartial?: boolean;
+  /** Active 5 km flood-proximity analysis (real server-side result): the
+   *  RESOLVED snapshot date label + whether that snapshot is partial. */
+  floodBuffer?: { dateLabel: string; partial: boolean } | null;
 }
 
 /**
@@ -52,6 +55,7 @@ export default function Legend({
   compareRegions,
   floodDateLabel,
   floodPartial,
+  floodBuffer,
 }: Props) {
   const { t } = useTranslation();
   const visible = LAYER_META.filter((m) => layers[m.id].visible);
@@ -97,6 +101,37 @@ export default function Legend({
             />
             {swipe.labelB}
           </li>
+        </ul>
+      ) : floodBuffer ? (
+        /* 5 km flood-proximity analysis — hospitals / flood areas (with the
+           RESOLVED snapshot date) / the 5 km relation, + partial notice. */
+        <ul className="flex flex-col gap-1">
+          <li className="flex items-center gap-2 text-xs text-text-default-default">
+            <span
+              className="size-3 flex-none rounded-full bg-background-primary-default"
+              aria-hidden
+            />
+            {t("morphism.layer.hospitals")}
+          </li>
+          <li className="flex items-center gap-2 text-xs text-text-default-default">
+            <span
+              className="size-3 flex-none rounded-sm bg-background-info-default"
+              aria-hidden
+            />
+            {t("morphism.legend.floodDate", { date: floodBuffer.dateLabel })}
+          </li>
+          <li className="flex items-center gap-2 text-xs text-text-default-default">
+            <span
+              className="size-3 flex-none rounded-sm bg-background-success-default"
+              aria-hidden
+            />
+            {t("morphism.legend.floodBuffer")}
+          </li>
+          {floodBuffer.partial && (
+            <li className="text-xs text-text-default-disable">
+              {t("morphism.legend.floodSample")}
+            </li>
+          )}
         </ul>
       ) : floodDateLabel ? (
         <ul className="flex flex-col gap-1">

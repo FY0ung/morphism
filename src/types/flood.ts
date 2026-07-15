@@ -63,3 +63,28 @@ export interface FloodApiResponse extends FloodFeatureCollection {
    */
   partial: boolean;
 }
+
+// ── 5 km flood-proximity analysis (/api/flood-buffer) ────────────────────────
+import type { HospitalFC } from "./hospital";
+
+export interface FloodBufferResponse {
+  /** Resolved flood snapshot date (YYYY-MM-DD) — never silently substituted. */
+  date: string;
+  radiusKm: number;
+  count: number;
+  /** BBox [w,s,e,n] of matching hospitals (null when count = 0). */
+  bounds: [number, number, number, number] | null;
+  /** Matching hospitals only (risk-flagged, with real distanceKm each). */
+  hospitals: HospitalFC;
+  /** False when the source flood dataset was truncated (partial notice). */
+  complete: boolean;
+  generatedAt: string;
+  /** Real per-phase durations measured ON THE SERVER (ms) — the chat's tool
+   *  steps display these, never fabricated numbers. */
+  timings: {
+    resolveMs: number;
+    floodLoadMs: number;
+    hospitalsLoadMs: number;
+    spatialMs: number;
+  };
+}

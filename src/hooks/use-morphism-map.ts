@@ -129,6 +129,10 @@ export function useMorphismMap({
   // Zoom-gating + current scenario state, kept in refs so they survive a style
   // swap (setStyle wipes custom sources/layers; we re-feed from these).
   const hospitalsDesiredRef = useRef(false);
+  // Analysis-result mode (e.g. hospitals within 5 km of flood): the point set
+  // IS the result, so points render at ANY zoom — the z≥11 gate would hide the
+  // answer after the camera fits nationwide result bounds.
+  const pointsAlwaysRef = useRef(false);
   const aggregateActiveRef = useRef(false);
   const boundariesActiveRef = useRef(false);
   // Region-compare mode: region-coloured boundaries + ONE count label per region,
@@ -279,8 +283,10 @@ export function useMorphismMap({
     const districtReady = districtActiveRef.current && adm2Zoom;
 
     // Points ONLY at z ≥ 11 ("points"/"adm3-context"). Below that the filtered
-    // points feed the counts but are never rendered.
-    const showPoints = hospitalsDesiredRef.current && pointZoom;
+    // points feed the counts but are never rendered — EXCEPT in analysis-result
+    // mode, where the points are the answer and show at any zoom.
+    const showPoints =
+      hospitalsDesiredRef.current && (pointZoom || pointsAlwaysRef.current);
     // Count labels: province in "adm1" (and "adm2" until districts load),
     // district in "adm2" once ready, single total in "summary".
     const showProvCount =
@@ -1263,6 +1269,15 @@ export function useMorphismMap({
     [applyZoomGating],
   );
 
+  /** Toggle analysis-result point mode (points visible at ANY zoom). */
+  const setPointsAlwaysVisible = useCallback(
+    (on: boolean) => {
+      pointsAlwaysRef.current = on;
+      applyZoomGating();
+    },
+    [applyZoomGating],
+  );
+
   return {
     containerRef,
     map,
@@ -1271,6 +1286,7 @@ export function useMorphismMap({
     flyTo,
     fitBounds,
     fitBoundsAndWait,
+    setPointsAlwaysVisible,
     commitFloodExtent,
     commitFloodTiles,
     setFloodOverview,

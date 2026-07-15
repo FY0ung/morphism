@@ -7,8 +7,6 @@ import type {
   MapBounds,
   ProvinceCount,
   ScenarioStep,
-  Position,
-  FeatureCollection,
   HospitalFC,
   ChartData,
 } from "@/types";
@@ -121,22 +119,6 @@ export const LAYER_META: LayerMeta[] = [
  * Coordinates are GeoJSON order: [longitude, latitude].
  * ────────────────────────────────────────────────────────────────────────── */
 
-/** Approximate a circle as a polygon ring (used for the buffer-radius layer). */
-function circleRing(center: Position, radiusKm: number, steps = 48): Position[][] {
-  const [lng, lat] = center;
-  const degPerKm = 1 / 110.574; // ~km per degree latitude
-  const ring: Position[] = [];
-  for (let i = 0; i <= steps; i++) {
-    const theta = (i / steps) * 2 * Math.PI;
-    const dLat = radiusKm * degPerKm * Math.sin(theta);
-    const dLng =
-      (radiusKm * degPerKm * Math.cos(theta)) /
-      Math.cos((lat * Math.PI) / 180);
-    ring.push([lng + dLng, lat + dLat]);
-  }
-  return [ring];
-}
-
 /** Raw hospital rows: [name, lng, lat, h24, province]. */
 const HOSPITAL_ROWS = [
   ["รพ. ศิริราช", 100.5345, 13.7563, true, "กรุงเทพมหานคร"],
@@ -163,44 +145,10 @@ export const MOCK_HOSPITALS: HospitalFC = {
   })),
 };
 
-/** Deterministic counts derived from the mock (so chat text matches the dots). */
-const countWhere = (pred: (r: HospitalRow) => boolean) =>
-  HOSPITAL_ROWS.filter(pred).length;
-// Hospitals near the flood polygon / buffer (central Bangkok) — risk set.
-const FLOOD_RISK = countWhere(
-  (r) => r[4] === "กรุงเทพมหานคร" && r[1] <= 100.55,
-);
-
-/* Flood analysis — TWO 5 km buffers around the exact BUFFER_CENTERS_RAW
- * centres (ported from the HTML reference). Hospitals are filtered (in the
- * view) to within 5 km of EITHER centre so only "at-risk" ones are shown.
- * NOTE: the flood layer itself has NO mock geometry — it renders only the real
- * processed data flow (PMTiles / CDN assets / the /api/flood proxy). */
-export const FLOOD_ANALYSIS_CENTERS: Position[] = [
-  [100.481, 13.784],
-  [100.486, 13.745],
-];
-export const FLOOD_ANALYSIS_RADIUS_KM = 5;
-
-/** One 5 km analysis buffer (green dashed circle) per centre. */
-export const MOCK_BUFFER: FeatureCollection = {
-  type: "FeatureCollection",
-  features: FLOOD_ANALYSIS_CENTERS.map((c) => ({
-    type: "Feature",
-    geometry: { type: "Polygon", coordinates: circleRing(c, FLOOD_ANALYSIS_RADIUS_KM) },
-    properties: { radiusKm: FLOOD_ANALYSIS_RADIUS_KM },
-  })),
-};
-
-/** Buffer centre markers — one point per centre. */
-export const MOCK_BUFFER_CENTERS: FeatureCollection = {
-  type: "FeatureCollection",
-  features: FLOOD_ANALYSIS_CENTERS.map((c) => ({
-    type: "Feature",
-    geometry: { type: "Point", coordinates: c },
-    properties: { label: "ศูนย์กลางรัศมี" },
-  })),
-};
+// NOTE: the former mock 5 km buffer (two hardcoded Bangkok circles + centre
+// markers + a mock "FLOOD_RISK" count) was removed — the buffer5km scenario is
+// now a REAL server-side analysis (`/api/flood-buffer`): latest complete flood
+// snapshot + real hospital points + real distance(point, polygon) ≤ 5 km.
 
 /* ──────────────────────────────────────────────────────────────────────────
  * DETERMINISTIC SCENARIO CONTROLLER
@@ -310,7 +258,6 @@ function grandTotal(counts?: ProvinceCounts): number {
 const CAM = {
   bkk: { center: [100.528, 13.742], zoom: 11.8, duration: 1100 },
   songkran: { center: [100.484, 13.768], zoom: 12.1, duration: 1100 },
-  buffer: { center: [100.498, 13.756], zoom: 11.6, duration: 1100 },
   chiangmai: { center: [98.8964, 18.8507], zoom: 9.2, duration: 1200 },
   north: { center: [99.45, 18.55], zoom: 7.2, duration: 1200 },
   compare: { center: [101.6, 16.3], zoom: 5.6, duration: 1100 },
@@ -398,24 +345,27 @@ const scnSongkran = (t: TFunction): Scenario => ({
   result: t("morphism.scenario.songkran.result"),
 });
 
-/** Hospitals within 5 km of a flood area (buffer analysis). */
+/**
+ * Hospitals within 5 km of flood areas — REAL server-side analysis.
+ * The dataset (latest COMPLETE flood snapshot), count, camera bounds and
+ * time-pill label are all resolved at RUNTIME from `/api/flood-buffer`; nothing
+ * here is baked. `result` is a placeholder only — the view always supplies the
+ * live message (with the exact resolved date) via the ScenarioOutcome.
+ */
 const scnBuffer5km = (t: TFunction): Scenario => ({
   id: "buffer5km",
   mode: "analysis",
-  layers: ["flood", "buffer", "hospitals"],
-  camera: CAM.buffer,
-  timeActive: true,
-  timeLabel: t("morphism.scenario.buffer.timeLabel"),
+  layers: ["flood", "hospitals"],
+  analysis: "flood-buffer",
   interim: t("morphism.scenario.buffer.interim"),
   steps: [
-    { label: t("morphism.scenario.buffer.step1"), wait: 360 },
-    { label: t("morphism.scenario.buffer.step2"), wait: 430 },
-    { label: t("morphism.scenario.buffer.step3"), wait: 480 },
-    { label: t("morphism.scenario.buffer.step4"), wait: 520 },
+    { label: t("morphism.scenario.buffer.step1"), wait: 0 },
+    { label: t("morphism.scenario.buffer.step2"), wait: 0 },
+    { label: t("morphism.scenario.buffer.step3"), wait: 0 },
+    { label: t("morphism.scenario.buffer.step4"), wait: 0 },
+    { label: t("morphism.scenario.buffer.step5"), wait: 0 },
   ],
-  result: t("morphism.scenario.buffer.result", {
-    count: String(FLOOD_RISK),
-  }),
+  result: "",
 });
 
 /** Hospitals in a single province — province-summary aggregation. */
