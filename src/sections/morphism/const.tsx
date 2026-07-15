@@ -16,6 +16,11 @@ import type { FloodScenarioMeta } from "@/types";
 import { FLOOD_COMPARE_SIDES } from "@/configs/flood-compare";
 import { FLOOD_LATEST_DATA_YEAR, floodYearKey } from "@/configs/flood-data";
 import {
+  FLOOD_DATASET_BY_MONTH,
+  FLOOD_DATASET_BY_YEAR,
+  FLOOD_DATASET_DATE_SET,
+} from "@/configs/flood-datasets";
+import {
   resolveFloodDate,
   detectFloodMonth,
   detectMonthPeriod,
@@ -27,6 +32,8 @@ import {
   type MonthPeriod,
 } from "@/lib/flood-date";
 import type { TFunction } from "@/languages/types";
+import { normalizeProvinceName } from "@/lib/geo";
+import { totalOfCounts, type ProvinceCounts } from "@/lib/hospital-stats";
 
 /** Active UI language for scenario display. */
 export type Lang = "en" | "th";
@@ -410,17 +417,33 @@ export function provinceRegion(name: string): string | null {
 /** Thailand bounds (HTML TH_BOUNDS) for the nationwide camera. */
 const TH_BOUNDS: MapBounds = { sw: [97.34, 5.61], ne: [105.64, 20.46], duration: 1200 };
 
-function provinceCount(name: string): ProvinceCount | null {
-  const c = PROV_CENTROID[name];
-  return c ? { name, center: [c[0], c[1]], count: c[2] } : null;
+/**
+ * Hospital count for one province. When the LIVE dataset counts are available
+ * (built from the loaded hospitals.geojson) they are the single source of
+ * truth — including an honest 0 for provinces with no record. The static
+ * reference figures from the HTML port are ONLY the pre-load fallback.
+ */
+function countOf(name: string, counts?: ProvinceCounts): number {
+  if (counts) return counts.get(normalizeProvinceName(name)) ?? 0;
+  return PROV_CENTROID[name]?.[2] ?? 0;
 }
-function regionProvinces(region: string): ProvinceCount[] {
+function provinceCount(
+  name: string,
+  counts?: ProvinceCounts,
+): ProvinceCount | null {
+  const c = PROV_CENTROID[name];
+  return c ? { name, center: [c[0], c[1]], count: countOf(name, counts) } : null;
+}
+function regionProvinces(
+  region: string,
+  counts?: ProvinceCounts,
+): ProvinceCount[] {
   return (REGIONS[region] ?? [])
-    .map(provinceCount)
+    .map((n) => provinceCount(n, counts))
     .filter((p): p is ProvinceCount => p !== null);
 }
-function regionTotal(region: string): number {
-  return regionProvinces(region).reduce((s, p) => s + p.count, 0);
+function regionTotal(region: string, counts?: ProvinceCounts): number {
+  return regionProvinces(region, counts).reduce((s, p) => s + p.count, 0);
 }
 /** Mean centroid of a region's provinces (for the region count label). */
 function regionCentroid(region: string): [number, number] {
@@ -449,13 +472,22 @@ export const NORTH_PROVINCES = regionProvinces("เหนือ");
 export const NORTH_TOTAL = regionTotal("เหนือ"); // 1290
 
 // Region-level aggregation badges (one per region) for the nationwide view.
-const REGION_BADGES: ProvinceCount[] = Object.keys(REGIONS).map((region) => {
-  const ps = regionProvinces(region);
-  const cx = ps.reduce((s, p) => s + p.center[0], 0) / ps.length;
-  const cy = ps.reduce((s, p) => s + p.center[1], 0) / ps.length;
-  return { name: REGION_LABEL[region], center: [cx, cy], count: regionTotal(region) };
-});
-const GRAND_TOTAL = Object.values(PROV_CENTROID).reduce((s, c) => s + c[2], 0);
+function regionBadges(counts?: ProvinceCounts): ProvinceCount[] {
+  return Object.keys(REGIONS).map((region) => {
+    const ps = regionProvinces(region, counts);
+    const cx = ps.reduce((s, p) => s + p.center[0], 0) / ps.length;
+    const cy = ps.reduce((s, p) => s + p.center[1], 0) / ps.length;
+    return {
+      name: REGION_LABEL[region],
+      center: [cx, cy],
+      count: regionTotal(region, counts),
+    };
+  });
+}
+function grandTotal(counts?: ProvinceCounts): number {
+  if (counts) return totalOfCounts(counts);
+  return Object.values(PROV_CENTROID).reduce((s, c) => s + c[2], 0);
+}
 
 // Camera presets — exact values from the reference HTML.
 const CAM = {
@@ -570,8 +602,13 @@ const scnBuffer5km = (t: TFunction): Scenario => ({
 });
 
 /** Hospitals in a single province — province-summary aggregation. */
-const scnProvince = (name: string, t: TFunction, lang: Lang): Scenario => {
-  const p = provinceCount(name)!;
+const scnProvince = (
+  name: string,
+  t: TFunction,
+  lang: Lang,
+  counts?: ProvinceCounts,
+): Scenario => {
+  const p = provinceCount(name, counts)!;
   const prov = provinceLabel(name, lang);
   return {
     id: "province",
@@ -594,9 +631,14 @@ const scnProvince = (name: string, t: TFunction, lang: Lang): Scenario => {
 };
 
 /** Hospitals across a region — province aggregation + per-province bar chart. */
-const scnRegion = (region: string, t: TFunction, lang: Lang): Scenario => {
-  const provinces = regionProvinces(region);
-  const total = regionTotal(region);
+const scnRegion = (
+  region: string,
+  t: TFunction,
+  lang: Lang,
+  counts?: ProvinceCounts,
+): Scenario => {
+  const provinces = regionProvinces(region, counts);
+  const total = regionTotal(region, counts);
   const regionLong = regionLabel(region, lang);
   const regionShort = regionLabelShort(region, lang);
   return {
@@ -656,10 +698,14 @@ export function compareLegend(lang: Lang): { label: string; swatch: string }[] {
  * CMP mode: region-coloured boundaries + ONE count label per region, hospital
  * points hidden, donut with the region colours.
  */
-const scnCompareRegions = (t: TFunction, lang: Lang): Scenario => {
+const scnCompareRegions = (
+  t: TFunction,
+  lang: Lang,
+  counts?: ProvinceCounts,
+): Scenario => {
   const provinceNames = COMPARE_REGIONS.flatMap((rg) => REGIONS[rg] ?? []);
   const provincePts = provinceNames
-    .map(provinceCount)
+    .map((n) => provinceCount(n, counts))
     .filter((p): p is ProvinceCount => p !== null);
   const regionA = regionLabel(COMPARE_REGIONS[0], lang);
   const regionB = regionLabel(COMPARE_REGIONS[1], lang);
@@ -672,7 +718,7 @@ const scnCompareRegions = (t: TFunction, lang: Lang): Scenario => {
     aggregate: COMPARE_REGIONS.map((rg) => ({
       name: regionLabelShort(rg, lang),
       center: regionCentroid(rg),
-      count: regionTotal(rg),
+      count: regionTotal(rg, counts),
     })),
     provinceNames,
     // Frame BOTH regions (like the HTML fitBounds over both regions' extent).
@@ -696,7 +742,7 @@ const scnCompareRegions = (t: TFunction, lang: Lang): Scenario => {
         centerLabel: t("morphism.scenario.compare.centerLabel"),
         rows: COMPARE_REGIONS.map((rg) => ({
           label: regionLabelShort(rg, lang),
-          value: regionTotal(rg),
+          value: regionTotal(rg, counts),
           swatch: REGION_FILL[rg],
         })),
         exportName: "region-compare",
@@ -706,18 +752,22 @@ const scnCompareRegions = (t: TFunction, lang: Lang): Scenario => {
 };
 
 /** Hospitals nationwide — region-grouped aggregation across all 77 provinces. */
-const scnNation = (t: TFunction, lang: Lang): Scenario => {
-  // Region-keyed rows so chart labels can be localized (REGION_BADGES.name is a
+const scnNation = (
+  t: TFunction,
+  lang: Lang,
+  counts?: ProvinceCounts,
+): Scenario => {
+  // Region-keyed rows so chart labels can be localized (regionBadges' name is a
   // display-only Thai label used for the map aggregate).
   const regionRows = Object.keys(REGIONS).map((rg) => ({
     label: regionLabelShort(rg, lang),
-    value: regionTotal(rg),
+    value: regionTotal(rg, counts),
   }));
   return {
     id: "nation",
     mode: "aggregate",
     layers: [],
-    aggregate: REGION_BADGES,
+    aggregate: regionBadges(counts),
     provinceNames: Object.keys(PROV_CENTROID),
     bounds: TH_BOUNDS,
     interim: t("morphism.scenario.nation.interim"),
@@ -727,7 +777,7 @@ const scnNation = (t: TFunction, lang: Lang): Scenario => {
       { label: t("morphism.scenario.nation.step3"), wait: 480 },
     ],
     result: t("morphism.scenario.nation.result", {
-      count: GRAND_TOTAL.toLocaleString(),
+      count: grandTotal(counts).toLocaleString(),
     }),
     charts: [
       {
@@ -931,45 +981,16 @@ const scnFloodCompare = (
  * any other date/month resolves to an explicit empty state — never a silent
  * substitution of another date.
  * ────────────────────────────────────────────────────────────────────────── */
-// Registered flood observation snapshots (each is an INDEPENDENT dataset; the
-// server route maps the date → its own Vallaris collection). Add a new date +
-// its month/year aliases here and drop its fixture in src/data/flood/<date>.json.
-const FLOOD_SNAPSHOTS = new Set<string>([
-  "2025-10-19",
-  "2025-10-17",
-  "2025-10-16",
-  "2025-10-15",
-  "2025-10-14",
-  "2025-10-13",
-  "2024-10-12",
-  "2024-10-10",
-  "2024-10-07",
-  "2024-10-05",
-  "2024-10-02",
-  "2023-10-20",
-  "2023-10-18",
-  "2023-10-12",
-  "2023-10-11",
-  "2023-10-10",
-  "2022-10-20",
-  "2022-10-18",
-  "2022-10-15",
-  "2022-10-14",
-  "2022-10-13",
-]);
-const FLOOD_SNAPSHOT_BY_MONTH: Record<string, string> = {
-  "2025-10": "2025-10-19", // latest snapshot in the month
-  "2024-10": "2024-10-12",
-  "2023-10": "2023-10-20",
-  "2022-10": "2022-10-20",
-};
+// Registered flood observation snapshots come from the SINGLE dataset registry
+// (configs/flood-datasets.ts) — month/year aliases are DERIVED there, never
+// hand-maintained here. Add a new date in the registry (+ its collection in
+// configs/flood-server.ts) and this resolver picks it up automatically.
+const FLOOD_SNAPSHOTS: ReadonlySet<string> = FLOOD_DATASET_DATE_SET;
+const FLOOD_SNAPSHOT_BY_MONTH: Readonly<Record<string, string>> =
+  FLOOD_DATASET_BY_MONTH;
 /** Gregorian year → the available observation snapshot for that year. */
-const FLOOD_SNAPSHOT_BY_YEAR: Record<string, string> = {
-  "2025": "2025-10-19", // latest snapshot in the year
-  "2024": "2024-10-12",
-  "2023": "2023-10-20",
-  "2022": "2022-10-20",
-};
+const FLOOD_SNAPSHOT_BY_YEAR: Readonly<Record<string, string>> =
+  FLOOD_DATASET_BY_YEAR;
 
 /**
  * Tool steps mirror the PROGRESSIVE pipeline: resolve → load geometry-free
@@ -1334,6 +1355,10 @@ export function resolveScenario(
   raw: string,
   t: TFunction,
   lang: Lang,
+  /** LIVE per-province hospital counts from the loaded dataset — when present,
+   *  every aggregate scenario (province/region/nationwide/compare) reports
+   *  these instead of the static reference table. */
+  counts?: ProvinceCounts,
 ): Scenario {
   const q = raw.toLowerCase();
   const isCompare = has(q, "เปรียบเทียบ", "เทียบ", "compare", " vs ", "vs");
@@ -1359,7 +1384,7 @@ export function resolveScenario(
     if (targets) return scnFloodCompare(targets[0], targets[1], t);
   }
   // Region/province comparison → chart.
-  if (isCompare) return scnCompareRegions(t, lang);
+  if (isCompare) return scnCompareRegions(t, lang, counts);
 
   // Flood during Songkran (specific analysis).
   if (has(q, "สงกรานต์", "songkran")) return scnSongkran(t);
@@ -1380,21 +1405,21 @@ export function resolveScenario(
 
   // Nationwide count → region-grouped aggregation.
   if (isNation || (countIntent && has(q, "ทุกที่", "ทั้งหมด"))) {
-    return scnNation(t, lang);
+    return scnNation(t, lang, counts);
   }
 
   // Region scope → region aggregation.
   const region = detectRegion(q);
-  if (region) return scnRegion(region, t, lang);
+  if (region) return scnRegion(region, t, lang, counts);
 
   // Province scope (with a count/“จังหวัด” intent) → province aggregation.
   const province = detectProvince(raw);
   if (province && (countIntent || has(q, "จังหวัด"))) {
-    return scnProvince(province, t, lang);
+    return scnProvince(province, t, lang, counts);
   }
 
   // Any remaining count query with no explicit scope → nationwide.
-  if (countIntent) return scnNation(t, lang);
+  if (countIntent) return scnNation(t, lang, counts);
 
   // Flood + a resolvable date/month → deterministic date-based flood scenario
   // (exact date or month snapshot; unknown dates give an explicit empty state).

@@ -65,7 +65,12 @@ import {
   compareLegend as buildCompareLegend,
 } from "../const";
 import { readCssColor } from "@/lib/map-tokens";
-import { areaKm2, bboxOf, distanceKm, normalizeProvinceName } from "@/lib/geo";
+import { areaKm2, bboxOf, normalizeProvinceName } from "@/lib/geo";
+import { buildProvinceCounts } from "@/lib/hospital-stats";
+import {
+  filterHospitalsByScope,
+  filterHospitalsInBuffer,
+} from "@/lib/hospital-filter";
 import {
   buildFloodHexLevels,
   buildFloodSampleIndex,
@@ -362,42 +367,44 @@ const MorphismView = () => {
 
   // Fetch the real province polygons once (client-side). On failure we keep a
   // flag so the UI shows an empty/error state instead of any fake geometry.
+  // Unmount ABORTS the network request (not just ignores the result).
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     void (async () => {
       try {
-        const fc = await getProvinceBoundaries();
-        if (!cancelled) {
+        const fc = await getProvinceBoundaries(controller.signal);
+        if (!controller.signal.aborted) {
           boundariesRef.current = fc;
           setBoundariesError(false);
           setBoundariesVersion((v) => v + 1); // trigger redraw of pending scenario
         }
       } catch {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           boundariesRef.current = null;
           setBoundariesError(true);
         }
       }
     })();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, []);
 
   // Fetch the real hospital points once (client-side) and feed them to the map
   // source so the zoom gate has real data to reveal at zoom ≥ 11.8.
+  // Unmount ABORTS the request; no state update can land after cancellation.
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     void (async () => {
       try {
-        const fc = await getHospitals();
-        if (!cancelled) setHospitalsFC(fc);
+        const fc = await getHospitals({}, controller.signal);
+        if (!controller.signal.aborted) setHospitalsFC(fc);
       } catch {
         /* keep the mock fallback so the map still renders something */
       }
     })();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, []);
 
@@ -1198,22 +1205,15 @@ const MorphismView = () => {
         if (scenario.id === "buffer5km") {
           // Spatial query: keep only hospitals within the 5 km buffer (red risk
           // points); draw the buffer centre; fit the camera to the buffer.
+          // Filtering is pure data work in lib/hospital-filter (testable).
           const source = hospitalsFC ?? MOCK_HOSPITALS;
-          const inBuffer = (p: Position) =>
-            FLOOD_ANALYSIS_CENTERS.some(
-              (c) => distanceKm(p, c) <= FLOOD_ANALYSIS_RADIUS_KM,
-            );
-          const features = source.features
-            .filter(
-              (f) =>
-                f.geometry.type === "Point" &&
-                inBuffer(f.geometry.coordinates as Position),
-            )
-            .map((f) => ({
-              ...f,
-              properties: { ...f.properties, risk: true },
-            }));
-          setPointOverride({ type: "FeatureCollection", features });
+          setPointOverride(
+            filterHospitalsInBuffer(
+              source,
+              FLOOD_ANALYSIS_CENTERS,
+              FLOOD_ANALYSIS_RADIUS_KM,
+            ),
+          );
           setBufferCenters(MOCK_BUFFER_CENTERS);
           const bb = bboxOf(MOCK_BUFFER);
           if (bb) {
@@ -1230,22 +1230,11 @@ const MorphismView = () => {
           // render the filtered points and fit the camera to them. NO aggregate.
           const scope = scenario.hospitalScope;
           const source = hospitalsFC ?? MOCK_HOSPITALS;
-          // Canonical EXACT province match (no substring — that leaks blanks).
+          // Canonical EXACT province match + h24 (skipped for flagless data) —
+          // pure data filtering in lib/hospital-filter, never camera clipping.
           const canonScope = normalizeProvinceName(scope.province);
-          const inProvince = (pv: string | undefined) => {
-            if (!scope.province) return true;
-            const canon = normalizeProvinceName(pv);
-            return canon !== "" && canon === canonScope;
-          };
-          // h24 only bites when the dataset actually carries the flag.
-          const datasetHasH24 = source.features.some((f) => f.properties.h24);
-          const afterProvince = source.features.filter((f) =>
-            inProvince(f.properties.province),
-          );
-          const features = afterProvince.filter(
-            (f) => !(scope.h24 && datasetHasH24 && !f.properties.h24),
-          );
-          const subset: HospitalFC = { type: "FeatureCollection", features };
+          const subset: HospitalFC = filterHospitalsByScope(source, scope);
+          const features = subset.features;
           setPointOverride(subset);
           setBufferCenters(null);
           // The province boundary + counts are drawn by the zoom-band hierarchy
@@ -1282,8 +1271,6 @@ const MorphismView = () => {
               intent: "poi-search",
               resolvedProvince: scope.province ?? null,
               totalHospitalsBeforeFilter: source.features.length,
-              afterProvinceFilter: afterProvince.length,
-              afterHoursFilter: features.length,
               renderedFeatureCount: features.length,
               sampleRenderedFeatures: features
                 .slice(0, 5)
@@ -1364,12 +1351,22 @@ const MorphismView = () => {
     applyReplay(s.present);
   }, [applyReplay, syncSceneNav]);
 
+  // LIVE per-province hospital counts from the loaded dataset — the single
+  // source aggregate scenarios (province/region/nationwide/compare) report, so
+  // map labels, charts and chat summaries match the rendered points. Undefined
+  // until the dataset arrives (scenarios then use the static reference table).
+  const provinceCounts = useMemo(
+    () => (hospitalsFC ? buildProvinceCounts(hospitalsFC) : undefined),
+    [hospitalsFC],
+  );
+
   // Resolve queries with the CURRENT language so scenario text (interim, result,
   // steps, chart labels, dates) renders in the active i18n language and
-  // re-resolves when the user switches languages.
+  // re-resolves when the user switches languages (and when the live counts
+  // arrive, so past aggregate replies update to the real numbers too).
   const resolve = useCallback(
-    (text: string) => resolveScenario(text, t, lang),
-    [t, lang],
+    (text: string) => resolveScenario(text, t, lang, provinceCounts),
+    [t, lang, provinceCounts],
   );
 
   const { messages, ask, pending } = useAiAssistant({

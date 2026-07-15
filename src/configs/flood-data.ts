@@ -10,6 +10,7 @@
 // `NEXT_PUBLIC_FLOOD_DATA_MODE=geojson`, and every PMTiles fetch failure also
 // falls back to it per-request, so missing assets can never blank the map.
 import { endpoint } from "@/configs/endpoint";
+import { FLOOD_LATEST_DATASET_YEAR } from "@/configs/flood-datasets";
 
 export type FloodDataMode = "pmtiles" | "geojson";
 
@@ -55,6 +56,8 @@ export const floodOverviewUrlByKey = (key: string) =>
 export const floodPmtilesUrl = (key: string) =>
   `pmtiles://${floodDatasetBase()}/flood/${encodeURIComponent(key)}/detail.pmtiles`;
 
-/** Latest CE year with real flood observations. Future years in queries (e.g.
- *  B.E. 2569 → CE 2026) clamp to this so "current year" always shows data. */
-export const FLOOD_LATEST_DATA_YEAR = 2025;
+/** Latest CE year with real flood observations — DERIVED from the dataset
+ *  registry (configs/flood-datasets.ts), never hand-edited. Future years in
+ *  queries (e.g. B.E. 2569 → CE 2026) clamp to this so "current year" always
+ *  shows data (labelled with the year actually compared). */
+export const FLOOD_LATEST_DATA_YEAR = FLOOD_LATEST_DATASET_YEAR;

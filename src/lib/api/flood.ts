@@ -8,7 +8,30 @@ import { emptyFC } from "@/types";
 import type { FloodApiResponse, FloodFC, FloodStats } from "@/types";
 import type { FloodHexOverview } from "@/lib/flood-overview";
 import { LruCache } from "@/lib/lru";
+import { isValidFeature } from "@/lib/normalize";
 import { ApiError } from "./client";
+
+/**
+ * Runtime guard over an external flood payload: keeps the response metadata,
+ * drops structurally invalid features (missing/empty geometry) instead of
+ * letting them reach MapLibre. Reported in dev; never a crash.
+ */
+function sanitizeFloodResponse(
+  raw: FloodApiResponse,
+  label: string,
+): FloodApiResponse {
+  const all = Array.isArray(raw?.features) ? raw.features : [];
+  const features = all.filter((f) => isValidFeature(f));
+  if (
+    features.length !== all.length &&
+    process.env.NODE_ENV !== "production"
+  ) {
+    console.warn(
+      `[normalize] flood ${label}: skipped ${all.length - features.length} invalid feature(s) of ${all.length}`,
+    );
+  }
+  return { ...raw, type: "FeatureCollection", features };
+}
 
 /**
  * พื้นที่น้ำท่วมตามปี (พ.ศ.) — mock ราย-ปีสำหรับโหมด swipe เทียบปี (ยังไม่มี
@@ -66,11 +89,14 @@ export async function getFloodAreas(
   const load = async (): Promise<FloodApiResponse> => {
     if (endpoint.flood.assetBase) {
       try {
-        const data = await fetchGzipJson<FloodApiResponse>(
-          endpoint.flood.assetDetail(date),
-          signal,
+        const data = sanitizeFloodResponse(
+          await fetchGzipJson<FloodApiResponse>(
+            endpoint.flood.assetDetail(date),
+            signal,
+          ),
+          `${date} (asset)`,
         );
-        if (data?.features?.length) return data;
+        if (data.features.length) return data;
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") throw err;
         // otherwise fall through to the proxy
@@ -78,7 +104,10 @@ export async function getFloodAreas(
     }
     const res = await fetch(endpoint.flood.byDate(date), { signal });
     if (!res.ok) throw new ApiError(res.status, `flood proxy failed: ${res.status}`);
-    return (await res.json()) as FloodApiResponse;
+    return sanitizeFloodResponse(
+      (await res.json()) as FloodApiResponse,
+      `${date} (proxy)`,
+    );
   };
 
   const req = load()

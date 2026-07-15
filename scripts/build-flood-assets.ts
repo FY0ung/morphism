@@ -38,6 +38,10 @@
 import { gzipSync } from "node:zlib";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  FLOOD_DATASET_BY_YEAR,
+  FLOOD_DATASET_DATES,
+} from "@/configs/flood-datasets";
 import { buildFloodHexLevels } from "@/lib/flood-overview";
 import { areaKm2 } from "@/lib/geo";
 import type { FloodApiResponse } from "@/types";
@@ -61,35 +65,17 @@ interface S3ClientLike {
   file(key: string): S3FileLike;
 }
 
-// Dates to publish. Add a future date here (and its date→collection mapping in
-// src/app/api/flood/route.ts), then re-run — or pass dates as CLI args.
-const DEFAULT_DATES = [
-  "2025-10-19",
-  "2025-10-17",
-  "2025-10-16",
-  "2025-10-15",
-  "2025-10-14",
-  "2025-10-13",
-  "2024-10-12",
-  "2024-10-10",
-  "2024-10-07",
-  "2024-10-05",
-  "2024-10-02",
-  "2023-10-20",
-  "2023-10-18",
-  "2023-10-12",
-  "2023-10-11",
-  "2023-10-10",
-  "2022-10-20",
-  "2022-10-18",
-  "2022-10-15",
-  "2022-10-14",
-  "2022-10-13",
-] as const;
+// Dates to publish — the SAME registry the app resolves against
+// (configs/flood-datasets.ts). Add a future date there (+ its date→collection
+// mapping in configs/flood-server.ts), then re-run — or pass dates as CLI args.
+const DEFAULT_DATES: readonly string[] = FLOOD_DATASET_DATES;
 
 // Annual cumulative datasets (key `year-<CE year>`) built from every DEFAULT
-// date in that year. B.E. years in user queries map to these CE keys client-side.
-const DEFAULT_YEARS = [2025, 2024, 2023, 2022] as const;
+// date in that year. B.E. years in user queries map to these CE keys
+// client-side. Derived from the registry (newest year first).
+const DEFAULT_YEARS: readonly number[] = Object.keys(FLOOD_DATASET_BY_YEAR)
+  .map(Number)
+  .sort((a, b) => b - a);
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const YEAR_KEY_RE = /^year-(\d{4})$/;

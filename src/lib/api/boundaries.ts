@@ -1,4 +1,5 @@
 import { endpoint } from "@/configs/endpoint";
+import { sanitizeFeatureCollection, stripThaiAdminPrefix } from "@/lib/normalize";
 import { emptyFC } from "@/types";
 import type {
   BoundaryFC,
@@ -40,28 +41,29 @@ interface RawFeature {
  * normalize property ให้เหลือ `name` (ชื่อจังหวัดภาษาไทย) เพื่อให้ join กับ
  * ตารางจำนวนได้ · โยน ApiError เมื่อโหลดไม่สำเร็จ (ไม่สร้าง polygon ปลอม).
  */
-export async function getProvinceBoundaries(): Promise<ProvinceBoundaryFC> {
+export async function getProvinceBoundaries(
+  signal?: AbortSignal,
+): Promise<ProvinceBoundaryFC> {
   // Plain GET (no JSON content-type) so it stays a simple CORS request.
-  const res = await fetch(endpoint.boundaries.provincesGeoJson);
+  const res = await fetch(endpoint.boundaries.provincesGeoJson, { signal });
   if (!res.ok) {
     throw new ApiError(res.status, `province boundaries fetch failed: ${res.status}`);
   }
-  const raw = (await res.json()) as { features?: RawFeature[] };
-  const features = (raw.features ?? []).map((f) => {
-    const props = f.properties ?? {};
-    let name = "";
-    for (const key of NAME_KEYS) {
-      const value = props[key];
-      if (typeof value === "string" && value.trim()) {
-        name = value.trim();
-        break;
+  const raw: unknown = await res.json();
+  const { fc } = sanitizeFeatureCollection<ProvinceBoundaryFC["features"][number]["properties"]>(
+    raw,
+    "province-boundaries",
+    (props) => {
+      let name = "";
+      for (const key of NAME_KEYS) {
+        const value = props[key];
+        if (typeof value === "string" && value.trim()) {
+          name = value.trim();
+          break;
+        }
       }
-    }
-    return {
-      type: "Feature" as const,
-      geometry: f.geometry,
-      properties: { name },
-    };
-  });
-  return { type: "FeatureCollection", features };
+      return { name: stripThaiAdminPrefix(name) };
+    },
+  );
+  return fc;
 }
