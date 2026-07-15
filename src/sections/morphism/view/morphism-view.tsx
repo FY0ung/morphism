@@ -23,6 +23,7 @@ import {
 } from "@/lib/api";
 import { floodPmtilesEnabled, floodPmtilesUrl } from "@/configs/flood-data";
 import { endpoint } from "@/configs/endpoint";
+import { CAMERA } from "@/configs/motion";
 import { cn } from "@/lib/utils";
 import type {
   BBox,
@@ -84,9 +85,8 @@ import { Tag } from "@/components/selection/Tag";
 const TOAST_MS = 2200;
 // No mock geometry — layers without real data render nothing (empty source).
 const EMPTY_FC: FeatureCollection = { type: "FeatureCollection", features: [] };
-// Flood camera transition — capped short (still smooth, uses the map's easing)
-// so scenario completion isn't gated on an unnecessarily long animation.
-const FLOOD_FIT_DURATION = 700;
+// Flood camera transition — centralized in configs/motion (same value).
+const FLOOD_FIT_DURATION = CAMERA.floodFit;
 
 /**
  * Explicit flood-scenario lifecycle. Completion ("complete") is only reached
@@ -182,7 +182,7 @@ const MorphismView = () => {
     applyExact,
   } = useMapLayers();
 
-  const { width, active, onPointerDown, onKeyDown } = useChatResizer(direction);
+  const { width, active, onPointerDown, onKeyDown, rootRef } = useChatResizer(direction);
   // Layer data for the map. The flood layer carries ONLY real processed data
   // (never mock geometry — no data means an empty layer), and the manual
   // administrative-boundaries layer is fed separately by useAdminBoundaries.
@@ -235,6 +235,7 @@ const MorphismView = () => {
     setDistricts,
     setSubdistricts,
     setCompareMode,
+    setCameraFactor,
   } = useMorphismMap({
     layers,
     data: mapData,
@@ -974,10 +975,18 @@ const MorphismView = () => {
   // `null` = the initial blank map. (Assigned in an effect — never in render.)
   useEffect(() => {
     applyReplayRef.current = (s: Scenario | null) => {
-      if (s === null) clearScene();
-      else void Promise.resolve(onScenario(s));
+      // History steps are "going back", not a new flight: shorten the camera
+      // transitions for the whole replay, restore once it has applied.
+      setCameraFactor(CAMERA.replayFactor);
+      const restore = () => setCameraFactor(1);
+      if (s === null) {
+        clearScene();
+        restore();
+      } else {
+        void Promise.resolve(onScenario(s)).finally(restore);
+      }
     };
-  }, [clearScene, onScenario]);
+  }, [clearScene, onScenario, setCameraFactor]);
 
   // LIVE per-province hospital counts from the loaded dataset — the single
   // source aggregate scenarios (province/region/nationwide/compare) report, so
@@ -1021,6 +1030,7 @@ const MorphismView = () => {
 
   return (
     <div
+      ref={rootRef}
       className={cn(
         "flex h-dvh w-full flex-col overflow-hidden bg-background-default-default",
         direction === "rtl" ? "md:flex-row-reverse" : "md:flex-row",
@@ -1057,8 +1067,9 @@ const MorphismView = () => {
             ref={overlayWrapRef}
             aria-hidden
             className={cn(
-              "pointer-events-none absolute inset-0 z-10",
-              !overlayReady && "invisible",
+              // Fade side B in once it is READY (was a hard `invisible` flip).
+              "pointer-events-none absolute inset-0 z-10 transition-opacity duration-200 motion-reduce:transition-none",
+              overlayReady ? "opacity-100" : "opacity-0",
             )}
           >
             <div
@@ -1097,6 +1108,7 @@ const MorphismView = () => {
               open={layerPanelOpen}
               layers={layers}
               onToggle={handleToggleLayer}
+              onClose={() => setLayerPanelOpen(false)}
             />
 
             <HistoryControls

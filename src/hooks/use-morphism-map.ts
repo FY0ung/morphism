@@ -29,9 +29,8 @@ import type {
   ProvinceBoundaryFC,
 } from "@/types";
 
-const REDUCED =
-  typeof window !== "undefined" &&
-  window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+// Live prefers-reduced-motion (re-read at each camera move — Phase 4D).
+import { isReducedMotion } from "@/lib/reduced-motion";
 
 type MaplibreMap = import("maplibre-gl").Map;
 type Expr = import("maplibre-gl").ExpressionSpecification;
@@ -141,6 +140,13 @@ export function useMorphismMap({
   const admRef = useRef<ProvinceBoundaryFC | null>(null);
   const bufferCentersRef = useRef<FeatureCollection<unknown> | null>(null);
   const appliedStyleRef = useRef<string>(styleFor(theme));
+  // Camera duration multiplier — 1 normally; the view lowers it while an
+  // undo/redo replays a scene so history steps use SHORTER flights than a new
+  // analysis (Phase 4C). Never affects data flow, only animation time.
+  const cameraFactorRef = useRef(1);
+  const setCameraFactor = useCallback((f: number) => {
+    cameraFactorRef.current = f;
+  }, []);
   // Multi-level admin aggregation (ADM2 district / ADM3 subdistrict), fed by the
   // useAdminHierarchy hook. Kept in refs so they survive a theme style swap.
   const districtDataRef = useRef<FeatureCollection<unknown> | null>(null);
@@ -878,8 +884,16 @@ export function useMorphismMap({
     // diff:false forces a full style reload (fires "style.load"); the default
     // diff mode would silently drop our custom layers without re-firing it.
     // The camera (center/zoom/bearing/pitch) is preserved across setStyle.
+    // Soften the swap: the container dips briefly instead of flashing the raw
+    // blank basemap; data/camera are untouched. Skipped under reduced motion.
+    const el = containerRef.current;
+    if (el && !isReducedMotion()) {
+      el.style.transition = "opacity 150ms ease";
+      el.style.opacity = "0.55";
+    }
     m.setStyle(next, { diff: false });
     m.once("style.load", () => {
+      if (el) el.style.opacity = "1";
       installLayers(m);
       if (process.env.NODE_ENV !== "production") {
         console.log("[theme-debug] reapplied", {
@@ -982,7 +996,7 @@ export function useMorphismMap({
     m.flyTo({
       center: cam.center,
       zoom: cam.zoom,
-      duration: REDUCED ? 0 : cam.duration,
+      duration: isReducedMotion() ? 0 : cam.duration * cameraFactorRef.current,
       essential: true,
     });
   }, []);
@@ -992,7 +1006,7 @@ export function useMorphismMap({
     if (!m) return;
     m.fitBounds([b.sw, b.ne], {
       padding: 80,
-      duration: REDUCED ? 0 : b.duration,
+      duration: isReducedMotion() ? 0 : b.duration * cameraFactorRef.current,
       essential: true,
     });
   }, []);
@@ -1003,7 +1017,7 @@ export function useMorphismMap({
   const fitBoundsAndWait = useCallback((b: MapBounds): Promise<void> => {
     const m = mapRef.current;
     if (!m) return Promise.resolve();
-    const duration = REDUCED ? 0 : b.duration;
+    const duration = isReducedMotion() ? 0 : b.duration * cameraFactorRef.current;
     return new Promise<void>((resolve) => {
       let settled = false;
       const finish = () => {
@@ -1269,5 +1283,6 @@ export function useMorphismMap({
     setDistricts,
     setSubdistricts,
     setCompareMode,
+    setCameraFactor,
   };
 }

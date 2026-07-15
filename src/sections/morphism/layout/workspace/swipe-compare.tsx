@@ -181,7 +181,7 @@ export default function SwipeCompare({
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
           onKeyDown={onKeyDown}
-          className="group pointer-events-auto absolute inset-y-0 flex w-6 -translate-x-1/2 cursor-ew-resize touch-none items-center justify-center outline-none"
+          className="animate-fade group pointer-events-auto absolute inset-y-0 flex w-6 -translate-x-1/2 cursor-ew-resize touch-none items-center justify-center outline-none"
           style={{ left: `${clip}%` }}
         >
           {/* the visible vertical line */}
@@ -206,7 +206,7 @@ export default function SwipeCompare({
         color="secondary"
         size="small"
         onClick={onClose}
-        className="pointer-events-auto absolute bottom-4 left-1/2 z-10 -translate-x-1/2 shadow-lg"
+        className="animate-fade pointer-events-auto absolute bottom-4 left-1/2 z-10 -translate-x-1/2 shadow-lg"
       >
         <Icon name="XClose" className="size-4" />
         {t("morphism.swipe.close")}
