@@ -316,6 +316,9 @@ async function main() {
         tileMinZoom: TILE_MIN_ZOOM,
         tileMaxZoom: TILE_MAX_ZOOM,
         generatedAt: new Date().toISOString(),
+        // Truthful completeness: a truncated/partial source is NEVER
+        // published as complete (5B requirement).
+        complete: !fc.partial,
       };
       const pmtiles = buildFloodPMTiles(fc as never, bbox);
       const overview = buildFloodHexLevels(fc);

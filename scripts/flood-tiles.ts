@@ -42,6 +42,9 @@ export interface FloodStatsFile {
   tileMinZoom: number;
   tileMaxZoom: number;
   generatedAt: string;
+  /** False when ANY source response for this key was truncated/partial —
+   *  the published dataset must never silently claim completeness. */
+  complete: boolean;
 }
 
 /** bbox over every coordinate of the FC (same walk the app's bboxOf uses). */
