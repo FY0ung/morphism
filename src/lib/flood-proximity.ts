@@ -79,12 +79,14 @@ function segmentDistanceKm(pt: Position, a: Position, b: Position): number {
 
 /**
  * Minimum distance (km) from a point to a (Multi)Polygon boundary — 0 when the
- * point is inside. `cutoffKm` allows early exit once any edge is close enough.
+ * point is inside. `cutoffKm` allows an early exit once any edge is at most
+ * that close (the caller only needs "≤ cutoff?"); the default 0 disables the
+ * early exit so the exact minimum is returned.
  */
 export function distanceToFloodGeometryKm(
   pt: Position,
   geom: Geometry,
-  cutoffKm = Infinity,
+  cutoffKm = 0,
 ): number {
   if (pointInFloodGeometry(pt, geom)) return 0;
   const polys =
