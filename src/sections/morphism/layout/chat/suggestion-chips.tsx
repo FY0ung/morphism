@@ -24,14 +24,29 @@ export default function SuggestionChips({ onPick, disabled }: Props) {
           return (
             <Tag
               key={key}
-              variant="outline" 
-              color="default" 
+              variant="outline"
+              color="default"
               size="small"
-              onClick={() => onPick(label)}
-              // disabled={disabled}
+              role="button"
+              tabIndex={disabled ? -1 : 0}
+              aria-disabled={disabled || undefined}
+              onClick={() => {
+                if (!disabled) onPick(label);
+              }}
+              onKeyDown={(e) => {
+                if (disabled) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onPick(label);
+                }
+              }}
+              className={
+                disabled
+                  ? "cursor-not-allowed opacity-50 transition-opacity"
+                  : "cursor-pointer transition-opacity"
+              }
             >
               {label}
-
             </Tag>
           );
         })}

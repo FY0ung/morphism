@@ -14,6 +14,7 @@ export default function LayerFab({ open, onToggle }: Props) {
   const { t } = useTranslation();
   return (
     <IconButton
+      id="morphism-layer-fab"
       variant="filled"
       color="default"
       size="medium"

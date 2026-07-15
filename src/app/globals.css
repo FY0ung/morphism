@@ -569,3 +569,49 @@ html {
 .maplibregl-popup-tip {
   border-top-color: var(--color-background-default-default) !important;
 }
+
+/* ===== Motion & shadow utilities (Phase 4A) =====
+   `dropshadow-200` and `animate-in fade-in` were referenced by shared
+   components (DropdownMenu, Select, Card, Accordion, Banner) but never
+   defined — silent no-ops. Defined here once, with reduced-motion handling. */
+@utility dropshadow-200 {
+  box-shadow:
+    0 4px 4px -4px rgb(0 0 0 / 0.2),
+    0 16px 32px -10px rgb(0 0 0 / 0.3);
+}
+@keyframes m-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@utility animate-in {
+  animation: m-pop-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@utility fade-in {
+  /* compat marker used alongside animate-in (tailwindcss-animate style) */
+  animation-fill-mode: both;
+}
+/* Opacity-only entrance — safe on elements positioned with transform
+   utilities (translate-x-1/2 etc.), where m-pop-in's transform would clash. */
+@keyframes m-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@utility animate-fade {
+  animation: m-fade 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .animate-fade {
+    animation-duration: 1ms;
+  }
+}

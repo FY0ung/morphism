@@ -18,6 +18,10 @@ export function useChatResizer(direction: LayoutDirection = "ltr") {
   const [width, setWidth] = useState(400);
   const [active, setActive] = useState(false);
 
+  // Root element carrying the `--chat-w` CSS variable. During a drag the
+  // width is written HERE directly (one style write per move, zero React
+  // renders of the app tree); React state commits ONCE on pointerup.
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const widthRef = useRef(width);
   const dirRef = useRef(direction);
   const startX = useRef(0);
@@ -56,10 +60,15 @@ export function useChatResizer(direction: LayoutDirection = "ltr") {
     const onMove = (e: PointerEvent) => {
       const dx = e.clientX - startX.current;
       const delta = dirRef.current === "rtl" ? -dx : dx;
-      setWidth(clamp(startW.current + delta));
+      const next = clamp(startW.current + delta);
+      // Direct DOM write — the layout updates visually without re-rendering
+      // the whole view on every pointermove (Phase 4B-6).
+      widthRef.current = next;
+      rootRef.current?.style.setProperty("--chat-w", `${next}px`);
     };
     const onUp = () => {
       setActive(false);
+      setWidth(widthRef.current); // commit React state ONCE per gesture
       persist(widthRef.current);
     };
     window.addEventListener("pointermove", onMove);
@@ -83,5 +92,5 @@ export function useChatResizer(direction: LayoutDirection = "ltr") {
     [persist],
   );
 
-  return { width, active, onPointerDown, onKeyDown, MIN, MAX };
+  return { width, active, onPointerDown, onKeyDown, rootRef, MIN, MAX };
 }

@@ -9,15 +9,17 @@ interface Props {
   open: boolean;
   layers: LayersState;
   onToggle: (id: LayerId) => void;
+  /** Close the panel (Escape) — focus returns to the layers FAB. */
+  onClose?: () => void;
 }
 
 /** Data-layers panel — checkbox per layer with an "AI" badge when AI-enabled. */
-export default function LayerPanel({ open, layers, onToggle }: Props) {
+export default function LayerPanel({ open, layers, onToggle, onClose }: Props) {
   const { t } = useTranslation();
 
   return (
     <div className={cn(
-        "absolute right-12 top-0 z-50 w-75 origin-top-right rounded-2xl border border-border-default-default bg-background-default-default p-4 shadow-xl transition-[opacity,transform] duration-200",
+        "absolute right-12 top-0 z-50 w-75 origin-top-right rounded-2xl border border-border-default-default bg-background-default-default p-4 shadow-xl transition-[opacity,transform] duration-200 motion-reduce:transition-none",
         open
           ? "opacity-100"
           : "pointer-events-none scale-95 opacity-0",
@@ -25,6 +27,15 @@ export default function LayerPanel({ open, layers, onToggle }: Props) {
       role="group"
       aria-label={t("morphism.layersTitle")}
       aria-hidden={!open}
+      // Escape closes the panel and hands focus back to the FAB that opened
+      // it (works from any checkbox inside — panel contents are focusable).
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && open && onClose) {
+          e.stopPropagation();
+          onClose();
+          document.getElementById("morphism-layer-fab")?.focus();
+        }
+      }}
     >
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-default-onlight">
         {t("morphism.layersTitle")}

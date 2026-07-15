@@ -1,6 +1,8 @@
 "use client";
 
 import { useTranslation } from "react-i18next";
+import { motion, useReducedMotion } from "motion/react";
+import { MOTION, EASE_OUT } from "@/configs/motion";
 import { Button } from "@/components/actionable/Buttons";
 import { Icon } from "@/components/icons";
 import { cn } from "@/lib/utils";
@@ -23,14 +25,25 @@ export default function MessageBubble({
   activeSwipe,
 }: Props) {
   const { t } = useTranslation();
+  const reduce = useReducedMotion();
+  // Entrance ONLY on mount (fade + slight rise). Updates to an existing
+  // message (steps, result text) re-render the same mounted component, so the
+  // animation never replays. Reduced motion → instant.
+  const entrance = {
+    initial: reduce ? { opacity: 0 } : { opacity: 0, y: 8 },
+    animate: reduce ? { opacity: 1 } : { opacity: 1, y: 0 },
+    transition: reduce
+      ? { duration: 0 }
+      : { duration: MOTION.base / 1000, ease: EASE_OUT },
+  } as const;
 
   if (message.role === "user") {
     return (
-      <div className="max-w-[94%] self-end">
+      <motion.div {...entrance} className="max-w-[94%] self-end">
         <div className="text-sm rounded-2xl rounded-br-sm bg-background-primary-default px-4 py-2 text-text-primary-default font-medium">
           {message.text}
         </div>
-      </div>
+      </motion.div>
     );
   }
 
@@ -46,7 +59,7 @@ export default function MessageBubble({
   );
 
   return (
-    <div className="w-full max-w-[94%] self-start">
+    <motion.div {...entrance} className="w-full max-w-[94%] self-start">
       <div
         aria-busy={loading}
         className="text-sm rounded-2xl rounded-bl-sm border border-border-default-default bg-background-default-light p-4"
@@ -130,6 +143,6 @@ export default function MessageBubble({
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
