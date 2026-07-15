@@ -51,6 +51,7 @@ import {
   REGION_DEFAULT_TOKEN,
   provinceRegion,
   compareLegend as buildCompareLegend,
+  type Lang,
 } from "../const";
 import { readCssColor } from "@/lib/map-tokens";
 import { bboxOf, normalizeProvinceName } from "@/lib/geo";
@@ -101,8 +102,11 @@ type FloodScenarioStatus =
 
 const MorphismView = () => {
   const { t, i18n } = useTranslation();
-  // Active scenario display language (default English; the other is Thai).
-  const lang: "en" | "th" = i18n.language === "th" ? "th" : "en";
+  // Active scenario display language (default English; Thai and Japanese also
+  // supported). Kept in sync with the i18n language so every runtime-built
+  // string (results, dates, chart labels) follows the active locale.
+  const lang: Lang =
+    i18n.language === "th" ? "th" : i18n.language === "ja" ? "ja" : "en";
   // Basemap follows the UI theme (next-themes). Undefined on first paint → the
   // hook defaults to dark, matching the app default (no hydration mismatch).
   const { resolvedTheme } = useTheme();

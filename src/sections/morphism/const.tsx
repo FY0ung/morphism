@@ -62,7 +62,7 @@ import { normalizeProvinceName } from "@/lib/geo";
 import { totalOfCounts, type ProvinceCounts } from "@/lib/hospital-stats";
 
 /** Active UI language for scenario display. */
-export type Lang = "en" | "th";
+export type Lang = "en" | "th" | "ja";
 
 /** Suggestion chips — `labelKey` is also the message sent when tapped. */
 export const SUGGESTION_CHIPS = [

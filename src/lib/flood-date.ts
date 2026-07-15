@@ -233,13 +233,30 @@ export function formatThaiMonth(ym: string): string {
   return `${THAI_MONTHS_FULL[m - 1]} ${toBuddhistYear(y)}`;
 }
 
+/** "2025-12-18" → "2025年12月18日" (Gregorian; Japanese uses CE years). */
+export function formatJapaneseDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${y}年${m}月${d}日`;
+}
+
+/** "2025-12" → "2025年12月" (Gregorian). */
+export function formatJapaneseMonth(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  return `${y}年${m}月`;
+}
+
+/** Supported UI locales for date labels. */
+export type DateLang = "en" | "th" | "ja";
+
 /**
  * Locale-aware date label.
  *   th → "13 ตุลาคม 2568" (Buddhist Era)
+ *   ja → "2025年10月13日" (Gregorian)
  *   en → "13 October 2025" (Gregorian)
  */
-export function formatDate(iso: string, lang: "en" | "th"): string {
+export function formatDate(iso: string, lang: DateLang): string {
   if (lang === "th") return formatThaiDate(iso);
+  if (lang === "ja") return formatJapaneseDate(iso);
   const [y, m, d] = iso.split("-").map(Number);
   return `${d} ${EN_MONTHS_FULL[m - 1]} ${y}`;
 }
@@ -247,10 +264,12 @@ export function formatDate(iso: string, lang: "en" | "th"): string {
 /**
  * Locale-aware month label.
  *   th → "ตุลาคม 2568" (Buddhist Era)
+ *   ja → "2025年10月" (Gregorian)
  *   en → "October 2025" (Gregorian)
  */
-export function formatMonth(ym: string, lang: "en" | "th"): string {
+export function formatMonth(ym: string, lang: DateLang): string {
   if (lang === "th") return formatThaiMonth(ym);
+  if (lang === "ja") return formatJapaneseMonth(ym);
   const [y, m] = ym.split("-").map(Number);
   return `${EN_MONTHS_FULL[m - 1]} ${y}`;
 }
