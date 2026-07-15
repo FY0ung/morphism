@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readMapPalette, readCssColor } from "@/lib/map-tokens";
+import { diagRegisterMap, diagUnregisterMap } from "@/lib/dev-diagnostics";
 import { FLOOD_COMPARE_SIDES } from "@/configs/flood-compare";
 import { ensurePmtilesProtocol } from "@/lib/map/pmtiles";
 import {
@@ -830,6 +831,7 @@ export function useMorphismMap({
         mapRef.current = map;
 
         map.on("error", (e) => console.error("[morphism-map]", e.error ?? e));
+        diagRegisterMap("main", map);
 
         requestAnimationFrame(() => map?.resize());
         ro = new ResizeObserver(() => map?.resize());
@@ -893,6 +895,7 @@ export function useMorphismMap({
     return () => {
       cancelled = true;
       ro?.disconnect();
+      diagUnregisterMap("main");
       mapRef.current = null;
       setMap(null);
       map?.remove();

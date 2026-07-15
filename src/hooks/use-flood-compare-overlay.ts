@@ -7,6 +7,7 @@ import {
   FLOOD_HEX_LEVELS,
 } from "@/lib/flood-overview";
 import { readCssColor } from "@/lib/map-tokens";
+import { diagRegisterMap, diagUnregisterMap } from "@/lib/dev-diagnostics";
 import { basemapStyleFor as styleFor } from "@/configs/map";
 import type { FloodCompareData } from "./use-morphism-map";
 import { ensurePmtilesProtocol } from "@/lib/map/pmtiles";
@@ -237,6 +238,7 @@ export function useFloodCompareOverlay({
           attributionControl: false,
         });
         overlayRef.current = overlay;
+        diagRegisterMap("compare-overlay", overlay);
         devLog("created");
         if (DEV) {
           // Dev-only handle for console diagnostics (never in production).
@@ -294,6 +296,7 @@ export function useFloodCompareOverlay({
       ro?.disconnect();
       detailRef.current = null;
       overlayRef.current = null;
+      diagUnregisterMap("compare-overlay");
       overlay?.remove();
       mapReadyRef.current = false;
       setMapReady(false);

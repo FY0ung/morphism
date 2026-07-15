@@ -848,11 +848,19 @@ export function resolveCompareTargets(
   t: TFunction,
   lang: Lang,
 ): [CompareTarget, CompareTarget] | null {
-  const parts = raw.split(/\s*(?:\bvs\b|เทียบกับ|เทียบ|กับ)\s*/i);
+  // Splitting on "เทียบ" also hits the "เทียบ" INSIDE "เปรียบเทียบ", leaving a
+  // junk first part ("เปรียบ") — which used to drop an exact-date compare into
+  // the bare-years fallback (silently substituting year datasets). Resolve
+  // every part and pair the FIRST and LAST that actually resolve instead.
+  const parts = raw
+    .split(/\s*(?:\bvs\b|เทียบกับ|เทียบ|กับ)\s*/i)
+    .map((p) => p.trim())
+    .filter(Boolean);
   if (parts.length >= 2) {
-    const a = compareTargetFor(parts[0], t, lang);
-    const b = compareTargetFor(parts[parts.length - 1], t, lang);
-    if (a && b) return [a, b];
+    const resolved = parts
+      .map((p) => compareTargetFor(p, t, lang))
+      .filter((x): x is CompareTarget => x !== null);
+    if (resolved.length >= 2) return [resolved[0], resolved[resolved.length - 1]];
   }
   // Fallback: two bare years anywhere in the text.
   const years = (raw.match(/\d{4}/g) ?? []).map(Number);
@@ -1399,7 +1407,12 @@ export function resolveScenario(
 
   // "Show 24-hour hospitals" (+ optional location) → POINT mode, scoped to the
   // EXTRACTED province (never hardcoded Bangkok). No province = current extent.
-  if (!countIntent && has(q, "24 ชั่วโมง", "24 ชม", "เปิด 24", "24/7")) {
+  // English aliases ("24-hour", "24 hours") included — the EN suggestion chip
+  // is literally "Show 24-hour hospitals in Bangkok" (caught by the test suite).
+  if (
+    !countIntent &&
+    has(q, "24 ชั่วโมง", "24 ชม", "เปิด 24", "24/7", "24-hour", "24 hour", "24hr")
+  ) {
     return scnCityHospitals(detectProvince(raw), true, t, lang);
   }
 
