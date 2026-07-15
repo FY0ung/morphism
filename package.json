@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json",
     "build:flood": "bun run scripts/build-flood-assets.ts",
     "build:flood:dry": "bun run scripts/build-flood-assets.ts --dry"
   },

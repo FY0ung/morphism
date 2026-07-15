@@ -48,6 +48,22 @@ interface AdmStatus {
 
 const DEBOUNCE_MS = 200;
 
+// Stable identity per points ARRAY (not per content): the view memoises the
+// hospital-points array, so a new array reference ⇔ the dataset changed. This
+// replaces the old `points.length` in the recompute key, which stayed STALE
+// when a different dataset happened to have the same count. WeakMap keeps this
+// O(1) per compute — no serialization — and never retains dropped arrays.
+const pointsVersions = new WeakMap<object, number>();
+let pointsVersionSeq = 0;
+function pointsVersionOf(points: readonly unknown[]): number {
+  let v = pointsVersions.get(points);
+  if (v === undefined) {
+    v = ++pointsVersionSeq;
+    pointsVersions.set(points, v);
+  }
+  return v;
+}
+
 /** Province names → parent pro_code set (empty names = every province). */
 function codesForProvinces(adm1: AdmFC, names: string[]): Set<string> {
   const set = new Set<string>();
@@ -123,7 +139,7 @@ export function useAdminHierarchy({
       return;
     }
 
-    const key = `${mode}|${band}|${namesKey}|${points.length}`;
+    const key = `${mode}|${band}|${namesKey}|${pointsVersionOf(points)}`;
     if (key === lastKeyRef.current) return;
     const runId = ++runRef.current;
     setStatus((s) => ({ ...s, loading: true, error: false }));
@@ -216,13 +232,15 @@ export function useAdminHierarchy({
     lastKeyRef.current = key;
     setStatusIfChanged({ loading: false, error: false, empty });
 
-    // [adm-debug] TEMP — remove after verifying zoom bands / aggregation.
-    console.log("[adm-debug] hierarchy", {
-      band,
-      mode,
-      hospitalPoints: points.length,
-      focusProvinces: focusCodes.size,
-    });
+    // [adm-debug] dev diagnostics only.
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[adm-debug] hierarchy", {
+        band,
+        mode,
+        hospitalPoints: points.length,
+        focusProvinces: focusCodes.size,
+      });
+    }
   }, [
     map,
     active,

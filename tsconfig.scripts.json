@@ -1,0 +1,11 @@
+{
+  // Type-checks the data-pipeline scripts (excluded from the app tsconfig so
+  // `next build` never touches them). Run with: bun run typecheck:scripts
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false
+  },
+  "include": ["scripts/**/*.ts"],
+  "exclude": ["node_modules"]
+}

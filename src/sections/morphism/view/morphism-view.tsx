@@ -1160,8 +1160,8 @@ const MorphismView = () => {
         } else if (scenario.bounds) {
           fitBounds(scenario.bounds);
         }
-        // [region-comparison] TEMP — remove after verifying.
-        if (isCmp) {
+        // [region-comparison] dev diagnostics only.
+        if (isCmp && process.env.NODE_ENV !== "production") {
           console.log("[region-comparison]", {
             scenarioType: "region-comparison",
             comparedRegions: scenario.aggregate?.map((a) => a.name),
@@ -1274,20 +1274,22 @@ const MorphismView = () => {
             flyTo(scenario.camera);
           }
 
-          // [morphism-query] TEMP — verify province scope (remove after fixing).
-          console.log("[morphism-query]", {
-            scenarioId: scenario.id,
-            renderMode: "points",
-            intent: "poi-search",
-            resolvedProvince: scope.province ?? null,
-            totalHospitalsBeforeFilter: source.features.length,
-            afterProvinceFilter: afterProvince.length,
-            afterHoursFilter: features.length,
-            renderedFeatureCount: features.length,
-            sampleRenderedFeatures: features
-              .slice(0, 5)
-              .map((f) => f.properties),
-          });
+          // [morphism-query] dev diagnostics only.
+          if (process.env.NODE_ENV !== "production") {
+            console.log("[morphism-query]", {
+              scenarioId: scenario.id,
+              renderMode: "points",
+              intent: "poi-search",
+              resolvedProvince: scope.province ?? null,
+              totalHospitalsBeforeFilter: source.features.length,
+              afterProvinceFilter: afterProvince.length,
+              afterHoursFilter: features.length,
+              renderedFeatureCount: features.length,
+              sampleRenderedFeatures: features
+                .slice(0, 5)
+                .map((f) => f.properties),
+            });
+          }
         } else {
           setPointOverride(null);
           setBufferCenters(null);

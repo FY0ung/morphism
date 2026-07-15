@@ -5,8 +5,9 @@ import { PoppinsFont, AnuphanFont } from "@/material/fonts";
 import LanguageProvider from "@/languages";
 
 export const metadata: Metadata = {
-  title: "App",
-  description: "Application description.",
+  title: "Morphism — AI Map Assistant",
+  description:
+    "Chat-driven GEOINT workspace: explore Thai flood extents, hospitals and administrative boundaries on an interactive map in plain language.",
 };
 
 export default function RootLayout({

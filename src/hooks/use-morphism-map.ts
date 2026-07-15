@@ -870,8 +870,14 @@ export function useMorphismMap({
             .setLngLat(f.geometry.coordinates as [number, number])
             .setHTML(html)
             .addTo(m);
-          // [adm-debug] TEMP — remove after verifying point clicks.
-          console.log("[adm-debug] hospital click", { name, h24, zoom: m.getZoom() });
+          // [adm-debug] dev diagnostics only.
+          if (process.env.NODE_ENV !== "production") {
+            console.log("[adm-debug] hospital click", {
+              name,
+              h24,
+              zoom: m.getZoom(),
+            });
+          }
         });
         map.on("mouseenter", "hospitals", () => {
           const m = mapRef.current;
@@ -881,8 +887,10 @@ export function useMorphismMap({
           const m = mapRef.current;
           if (m) m.getCanvas().style.cursor = "";
         });
-        // [adm-debug] TEMP — confirm the hospital click handler is attached.
-        console.log("[adm-debug] hospital click handler attached");
+        // [adm-debug] dev diagnostics only.
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[adm-debug] hospital click handler attached");
+        }
       } catch (err) {
         console.error("[morphism-map] init failed", err);
       }
@@ -904,22 +912,26 @@ export function useMorphismMap({
     const next = styleFor(theme);
     if (next === appliedStyleRef.current) return;
     appliedStyleRef.current = next;
-    // [theme-debug] TEMP — remove after verifying.
-    console.log("[theme-debug] switching", { theme, next });
+    // [theme-debug] dev diagnostics only.
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[theme-debug] switching", { theme, next });
+    }
     // diff:false forces a full style reload (fires "style.load"); the default
     // diff mode would silently drop our custom layers without re-firing it.
     // The camera (center/zoom/bearing/pitch) is preserved across setStyle.
     m.setStyle(next, { diff: false });
     m.once("style.load", () => {
       installLayers(m);
-      console.log("[theme-debug] reapplied", {
-        styleLoaded: m.isStyleLoaded(),
-        admSource: Boolean(m.getSource("adm")),
-        aggLayer: Boolean(m.getLayer("agg-count")),
-        hospitalsLayer: Boolean(m.getLayer("hospitals")),
-        aggregateActive: aggregateActiveRef.current,
-        boundariesActive: boundariesActiveRef.current,
-      });
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[theme-debug] reapplied", {
+          styleLoaded: m.isStyleLoaded(),
+          admSource: Boolean(m.getSource("adm")),
+          aggLayer: Boolean(m.getLayer("agg-count")),
+          hospitalsLayer: Boolean(m.getLayer("hospitals")),
+          aggregateActive: aggregateActiveRef.current,
+          boundariesActive: boundariesActiveRef.current,
+        });
+      }
     });
   }, [theme, ready, installLayers]);
 

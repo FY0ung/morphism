@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { extractFileNameDate } from "@/lib/flood-date";
+import { LruCache } from "@/lib/lru";
 import type { FloodApiResponse, FloodFeature } from "@/types";
 
 // SERVER-ONLY route handler. Fetches the flood collection for one observation
@@ -180,11 +181,16 @@ async function paginateAll(
 }
 
 // ── cache by date + in-flight dedupe ─────────────────────────────────────────
+// BOUNDED (LRU, latest 3 keys): a full-date payload can hold up to 80k
+// features — an unbounded Map (especially with `date|bbox` composite keys)
+// grows for the whole process lifetime. TTL staleness is still checked on
+// read; in-flight dedupe is unchanged.
 interface Entry {
   at: number;
   payload: FloodApiResponse;
 }
-const cache = new Map<string, Entry>();
+const CACHE_MAX_ENTRIES = 3;
+const cache = new LruCache<string, Entry>(CACHE_MAX_ENTRIES);
 const inflight = new Map<string, Promise<FloodApiResponse>>();
 
 function respond(payload: FloodApiResponse, status = 200) {

@@ -110,7 +110,10 @@ export function buildPMTiles(tiles: TileInput[], opts: PMTilesOptions): Uint8Arr
 
   // ── directories: root only when it fits, else root→leaves ─────────────────
   let rootDir = serializeDirectory(entries);
-  let leafData = new Uint8Array(0);
+  // Widened annotation: `concat` returns Uint8Array<ArrayBufferLike>, which a
+  // bare `new Uint8Array(0)` (Uint8Array<ArrayBuffer>) won't accept under
+  // TS 5.9 typed-array generics. Type-only; no behaviour change.
+  let leafData: Uint8Array = new Uint8Array(0);
   if (rootDir.byteLength > ROOT_BUDGET) {
     const leafChunks: Uint8Array[] = [];
     const rootEntries: Entry[] = [];

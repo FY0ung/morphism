@@ -77,6 +77,10 @@ tmp/
 *.gpkg
 *.mbtiles
 *.pmtiles
+# ...EXCEPT the bundled hospital dataset the app serves from /public — the
+# blanket `*.geojson` silently dropped it from git, so fresh clones fell back
+# to the 11-point mock. Whitelist exactly this file (not every GeoJSON).
+!public/data/hospitals.geojson
 
 # local databases
 *.sqlite

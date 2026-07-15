@@ -7,6 +7,7 @@ import {
 import { emptyFC } from "@/types";
 import type { FloodApiResponse, FloodFC, FloodStats } from "@/types";
 import type { FloodHexOverview } from "@/lib/flood-overview";
+import { LruCache } from "@/lib/lru";
 import { ApiError } from "./client";
 
 /**
@@ -21,7 +22,12 @@ export async function getFlood(year: number): Promise<FloodFC> {
 // Client cache by observation date + in-flight dedupe. Repeated queries for the
 // same date (and undo/redo) reuse the cached payload — no refetch. Successful
 // responses only; errors are not cached so a later retry can succeed.
-const floodCache = new Map<string, FloodApiResponse>();
+// BOUNDED (LRU, latest 3 dates): a full FeatureCollection can be tens of MB,
+// so an unbounded Map grows for the whole tab lifetime. 3 covers a compare
+// session (2 dates) + one more; an open compare is never broken by eviction —
+// its detail indexes reference the feature objects directly, not this cache.
+const FLOOD_CACHE_MAX_DATES = 3;
+const floodCache = new LruCache<string, FloodApiResponse>(FLOOD_CACHE_MAX_DATES);
 const floodInflight = new Map<string, Promise<FloodApiResponse>>();
 
 /**
