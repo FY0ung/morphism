@@ -7,19 +7,14 @@ import {
   FLOOD_HEX_LEVELS,
 } from "@/lib/flood-overview";
 import { readCssColor } from "@/lib/map-tokens";
-import {
-  DARK_BASEMAP_STYLE,
-  LIGHT_BASEMAP_STYLE,
-  type FloodCompareData,
-} from "./use-morphism-map";
+import { basemapStyleFor as styleFor } from "@/configs/map";
+import type { FloodCompareData } from "./use-morphism-map";
 import { ensurePmtilesProtocol } from "@/lib/map/pmtiles";
 import type { FeatureCollection } from "@/types";
 
 type MaplibreMap = import("maplibre-gl").Map;
 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
-const styleFor = (theme?: string) =>
-  theme === "light" ? LIGHT_BASEMAP_STYLE : DARK_BASEMAP_STYLE;
 
 const DEV = process.env.NODE_ENV !== "production";
 const devLog = (msg: string) => {

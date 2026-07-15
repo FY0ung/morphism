@@ -27,9 +27,13 @@ Validation:
 ```bash
 bun run typecheck          # app code (tsc --noEmit)
 bun run typecheck:scripts  # data-pipeline scripts
+bun run test               # normalization / registry / filtering suites
 bun run lint
 bun run build
 ```
+
+Replacing the datasets with your own (hospitals, flood, boundaries, map style,
+storage): see [`docs/data-adapters.md`](docs/data-adapters.md).
 
 ## Environment variables
 

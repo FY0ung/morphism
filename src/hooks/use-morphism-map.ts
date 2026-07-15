@@ -33,20 +33,14 @@ const ADM_COLOR = ["get", "color"] as unknown as Expr;
 // kept generic — any resource FC (FloodFC, HospitalFC…) is assignable here.
 type LayerData = Record<LayerId, FeatureCollection<unknown>>;
 
-// CARTO vector basemaps (carry their own sources/glyphs/sprite).
-export const DARK_BASEMAP_STYLE =
-  "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
-export const LIGHT_BASEMAP_STYLE =
-  "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
-// Backwards-compatible default (dark) — also used by the swipe overlay map.
-export const BASEMAP_STYLE = DARK_BASEMAP_STYLE;
-
-const styleFor = (theme?: string) =>
-  theme === "light" ? LIGHT_BASEMAP_STYLE : DARK_BASEMAP_STYLE;
-
-// Initial camera — matches the HTML reference (central Bangkok).
-const INITIAL_CENTER: [number, number] = [100.53, 13.745];
-const INITIAL_ZOOM = 11.4;
+// Basemap styles + initial camera live in configs/map.ts (single source);
+// re-exported here for backwards compatibility with existing importers.
+export {
+  BASEMAP_STYLE,
+  DARK_BASEMAP_STYLE,
+  LIGHT_BASEMAP_STYLE,
+} from "@/configs/map";
+import { basemapStyleFor as styleFor, INITIAL_CENTER, INITIAL_ZOOM } from "@/configs/map";
 
 // Initial source payload handed to MapLibre — keep the default props shape so it
 // satisfies maplibre's GeoJsonProperties. (LayerData inputs stay generic.)

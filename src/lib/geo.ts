@@ -151,7 +151,9 @@ export function unitsWithData(
 export function normalizeProvinceName(raw: string | undefined | null): string {
   let s = (raw ?? "").trim();
   if (!s) return "";
-  s = s.replace(/^จังหวัด\s*/, "").replace(/\s+/g, "");
+  // Strip both province prefixes ("จังหวัด" and the abbreviation "จ.") so
+  // records like "จ.กรุงเทพมหานคร" join the same canonical bucket.
+  s = s.replace(/^(?:จ\.|จังหวัด)\s*/, "").replace(/\s+/g, "");
   const low = s.toLowerCase();
   if (low === "bangkok" || low === "bkk" || s.startsWith("กรุงเทพ")) {
     return "กรุงเทพมหานคร";

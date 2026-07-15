@@ -30,6 +30,13 @@ export type {
   AdmFC,
 } from "./boundary";
 export type {
+  HospitalFeature,
+  AdministrativeBoundaryFeature,
+  FloodOverview,
+  FloodComparisonDataset,
+  DatasetMetadata,
+} from "./dataset";
+export type {
   LayerId,
   LayerState,
   LayersState,
