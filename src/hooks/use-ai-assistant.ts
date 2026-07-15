@@ -10,9 +10,7 @@ import type {
   ToolStep,
 } from "@/types";
 
-const REDUCED =
-  typeof window !== "undefined" &&
-  window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+import { isReducedMotion } from "@/lib/reduced-motion";
 
 let seq = 0;
 const uid = (p: string) => `${p}-${Date.now()}-${seq++}`;
@@ -181,7 +179,7 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
 
       // ── Non-flood: legacy timed animation (nominal waits). ──────────────────
       const run = (fn: () => void, at: number) => {
-        timers.current.push(setTimeout(fn, REDUCED ? 0 : at));
+        timers.current.push(setTimeout(fn, isReducedMotion() ? 0 : at));
       };
       const nominal = scenario.steps.map((s) => s.wait);
       let elapsed = 0;
