@@ -4,7 +4,6 @@ import { emptyFC } from "@/types";
 import type {
   BoundaryFC,
   BoundaryLevel,
-  Geometry,
   ProvinceBoundaryFC,
 } from "@/types";
 import { ApiError } from "./client";
@@ -29,12 +28,6 @@ const NAME_KEYS = [
   "name",
   "pro_en",
 ] as const;
-
-interface RawFeature {
-  type: "Feature";
-  geometry: Geometry;
-  properties?: Record<string, unknown> | null;
-}
 
 /**
  * ดึงโพลิกอนจังหวัดจริงจากชุดข้อมูลเปิด (แหล่งเดียวกับ HTML reference) แล้ว

@@ -108,6 +108,8 @@ export interface FloodStats {
   tileMinZoom: number;
   tileMaxZoom: number;
   generatedAt: string;
+  /** Present on assets generated ≥ Phase 5: false = source was truncated. */
+  complete?: boolean;
 }
 
 /** กล้องแผนที่สำหรับ flyTo (ค่าพอร์ตตรงจาก HTML reference) */

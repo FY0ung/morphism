@@ -11,7 +11,7 @@ export function localStorageAvailable() {
     window.localStorage.setItem(key, key);
     window.localStorage.removeItem(key);
     return true;
-  } catch (error) {
+  } catch {
     return false;
   }
 }
@@ -33,7 +33,7 @@ export function localStorageGetItem(key: string, defaultValue = "") {
       return JSON.parse(value)
     }
     return defaultValue
-  } catch (error) {
+  } catch {
     return null;
   }
 }

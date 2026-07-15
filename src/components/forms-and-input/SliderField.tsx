@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { Icon } from "../icons";
 import { Button } from "../actionable/Buttons";
 
 export type SliderType = "continue" | "range";
@@ -109,7 +108,7 @@ export const SliderField: React.FC<SliderFieldProps> = ({
         const rawValue = min + (pos / rect.width) * (max - min);
         const stepped = Math.round(rawValue / step) * step;
 
-        let newRange = [...range] as [number, number];
+        const newRange = [...range] as [number, number];
         newRange[index] = Math.min(max, Math.max(min, stepped));
 
         // Prevent crossover
@@ -124,20 +123,24 @@ export const SliderField: React.FC<SliderFieldProps> = ({
     // ----------------------------
     // Drag
     // ----------------------------
-    const startDrag =
-        (handler: (clientX: number) => void) =>
-            (e: React.MouseEvent) => {
-                handler(e.clientX);
+    // Invoked from the event (never during render — the old curried form
+    // `startDrag(fn)` ran at render time while `fn` closes over a ref, which
+    // React Compiler rejects).
+    const beginDrag = (
+        e: React.MouseEvent,
+        handler: (clientX: number) => void,
+    ) => {
+        handler(e.clientX);
 
-                const move = (ev: MouseEvent) => handler(ev.clientX);
-                const up = () => {
-                    window.removeEventListener("mousemove", move);
-                    window.removeEventListener("mouseup", up);
-                };
+        const move = (ev: MouseEvent) => handler(ev.clientX);
+        const up = () => {
+            window.removeEventListener("mousemove", move);
+            window.removeEventListener("mouseup", up);
+        };
 
-                window.addEventListener("mousemove", move);
-                window.addEventListener("mouseup", up);
-            };
+        window.addEventListener("mousemove", move);
+        window.addEventListener("mouseup", up);
+    };
 
     // ----------------------------
     // Colors
@@ -205,9 +208,9 @@ export const SliderField: React.FC<SliderFieldProps> = ({
                             <div
                                 className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-background-default-default border border-border-primary-default rounded-full shadow cursor-pointer ${thumbColor}`}
                                 style={{ left: `calc(${p1}% - 8px)` }}
-                                onMouseDown={startDrag((x) =>
-                                    updateRange(x, 0)
-                                )}
+                                onMouseDown={(e) =>
+                                    beginDrag(e, (x) => updateRange(x, 0))
+                                }
                             />
                         )}
 
@@ -217,11 +220,13 @@ export const SliderField: React.FC<SliderFieldProps> = ({
                             style={{
                                 left: `calc(${type === "continue" ? p1 : p2}% - 8px)`,
                             }}
-                            onMouseDown={startDrag((x) =>
-                                type === "continue"
-                                    ? updateSingle(x)
-                                    : updateRange(x, 1)
-                            )}
+                            onMouseDown={(e) =>
+                                beginDrag(e, (x) =>
+                                    type === "continue"
+                                        ? updateSingle(x)
+                                        : updateRange(x, 1),
+                                )
+                            }
                         />
                     </div>
                 </div>

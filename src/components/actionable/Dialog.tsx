@@ -1,6 +1,6 @@
 // "use client";
 
-// import React, { useEffect } from "react";
+// import React, { useCallback, useEffect } from "react";
 // import { IconButton } from "./IconButtons";
 // import { Icon } from "../icons";
 // import { motion, AnimatePresence } from "motion/react";
@@ -117,6 +117,7 @@
 
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -177,14 +178,15 @@ const DialogRoot: React.FC<DialogRootProps> = ({
 
   const open = isControlled ? (openProp as boolean) : uncontrolledOpen;
 
-  const setOpen = (v: boolean) => {
+  // Stable identity so the context memo doesn't churn every render.
+  const setOpen = useCallback((v: boolean) => {
     if (!v) onClose?.();
     onOpenChange?.(v);
 
     if (!isControlled) {
       setUncontrolledOpen(v);
     }
-  };
+  }, [isControlled, onClose, onOpenChange]);
 
   // lock body scroll
   useEffect(() => {
@@ -197,7 +199,9 @@ const DialogRoot: React.FC<DialogRootProps> = ({
 
   const value = useMemo(
     () => ({ open, setOpen, type }),
-    [open, type]
+    // setOpen is the stable useState setter — including it satisfies the
+    // exhaustive-deps rule without changing behavior.
+    [open, setOpen, type],
   );
 
   return (

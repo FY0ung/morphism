@@ -34,10 +34,15 @@ export function useChatResizer(direction: LayoutDirection = "ltr") {
     dirRef.current = direction;
   }, [direction]);
 
-  // Restore persisted width on mount.
+  // Restore persisted width on mount. The setState runs inside a rAF callback
+  // (async), so the effect body itself never sets state synchronously — and
+  // the first paint still matches SSR (no hydration mismatch).
   useEffect(() => {
-    const stored = Number(localStorage.getItem(STORAGE_KEY));
-    if (stored >= MIN && stored <= MAX) setWidth(stored);
+    const id = requestAnimationFrame(() => {
+      const stored = Number(localStorage.getItem(STORAGE_KEY));
+      if (stored >= MIN && stored <= MAX) setWidth(stored);
+    });
+    return () => cancelAnimationFrame(id);
   }, []);
 
   const persist = useCallback((w: number) => {
