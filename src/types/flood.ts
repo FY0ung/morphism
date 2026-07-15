@@ -1,4 +1,4 @@
-import type { FeatureCollection, Feature } from "./geo";
+import type { FeatureCollection, Feature, Geometry } from "./geo";
 
 // DTO ของชั้น "พื้นที่น้ำท่วม" — โพลิกอนพร้อมระดับความรุนแรง (mock ราย-ปี)
 export interface FloodProps {
@@ -87,4 +87,24 @@ export interface FloodBufferResponse {
     hospitalsLoadMs: number;
     spatialMs: number;
   };
+}
+
+/**
+ * Precomputed dissolved buffer GEOMETRY asset
+ * (flood/<date>/buffer-<radius>km.json.gz, built by scripts/build-flood-buffer).
+ * ONE MultiPolygon derived from the SAME flood snapshot + 5 km definition as
+ * the hospital spatial query — the map renders it as the green analysis zone.
+ */
+export interface FloodBufferGeometryAsset {
+  version: 1;
+  date: string;
+  radiusKm: number;
+  /** Grid resolution the contour was traced at (km). */
+  cellKm: number;
+  /** Conservative OUTWARD threshold margin (km) — the zone never cuts inside
+   *  the true radius; it may extend outward by ≤ margin + simplify tolerance. */
+  marginKm: number;
+  bbox: [number, number, number, number];
+  generatedAt: string;
+  geometry: Geometry;
 }

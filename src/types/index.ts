@@ -19,6 +19,7 @@ export type {
   FloodFeatureCollection,
   FloodApiResponse,
   FloodBufferResponse,
+  FloodBufferGeometryAsset,
 } from "./flood";
 export type {
   BoundaryLevel,

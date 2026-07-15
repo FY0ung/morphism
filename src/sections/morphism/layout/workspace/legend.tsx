@@ -104,29 +104,37 @@ export default function Legend({
         </ul>
       ) : floodBuffer ? (
         /* 5 km flood-proximity analysis — hospitals / flood areas (with the
-           RESOLVED snapshot date) / the 5 km relation, + partial notice. */
+           RESOLVED snapshot date) / the 5 km zone, + partial notice. Each row
+           follows its ACTUAL layer toggle, so the legend never lists a layer
+           the map is not currently rendering. */
         <ul className="flex flex-col gap-1">
-          <li className="flex items-center gap-2 text-xs text-text-default-default">
-            <span
-              className="size-3 flex-none rounded-full bg-background-primary-default"
-              aria-hidden
-            />
-            {t("morphism.layer.hospitals")}
-          </li>
-          <li className="flex items-center gap-2 text-xs text-text-default-default">
-            <span
-              className="size-3 flex-none rounded-sm bg-background-info-default"
-              aria-hidden
-            />
-            {t("morphism.legend.floodDate", { date: floodBuffer.dateLabel })}
-          </li>
-          <li className="flex items-center gap-2 text-xs text-text-default-default">
-            <span
-              className="size-3 flex-none rounded-sm bg-background-success-default"
-              aria-hidden
-            />
-            {t("morphism.legend.floodBuffer")}
-          </li>
+          {layers.hospitals.visible && (
+            <li className="flex items-center gap-2 text-xs text-text-default-default">
+              <span
+                className="size-3 flex-none rounded-full bg-background-primary-default"
+                aria-hidden
+              />
+              {t("morphism.layer.hospitals")}
+            </li>
+          )}
+          {layers.flood.visible && (
+            <li className="flex items-center gap-2 text-xs text-text-default-default">
+              <span
+                className="size-3 flex-none rounded-sm bg-background-info-default"
+                aria-hidden
+              />
+              {t("morphism.legend.floodDate", { date: floodBuffer.dateLabel })}
+            </li>
+          )}
+          {layers.buffer.visible && (
+            <li className="flex items-center gap-2 text-xs text-text-default-default">
+              <span
+                className="size-3 flex-none rounded-sm bg-background-success-default"
+                aria-hidden
+              />
+              {t("morphism.legend.floodBuffer")}
+            </li>
+          )}
           {floodBuffer.partial && (
             <li className="text-xs text-text-default-disable">
               {t("morphism.legend.floodSample")}

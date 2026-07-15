@@ -3,7 +3,7 @@ export { getUsers, getUser, createUser } from "./user";
 export { getHospitals } from "./hospitals";
 export {
   getFlood,
-  getFloodAreas, getFloodBufferAnalysis,
+  getFloodAreas, getFloodBufferAnalysis, getFloodBufferGeometry,
   getFloodDetailInBBox,
   getFloodOverviewAsset,
   getFloodOverviewByKey,

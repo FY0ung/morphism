@@ -1,11 +1,18 @@
 import { endpoint } from "@/configs/endpoint";
 import {
+  floodBufferGeometryUrl,
   floodDatasetBase,
   floodOverviewUrlByKey,
   floodStatsUrl,
 } from "@/configs/flood-data";
 import { emptyFC } from "@/types";
-import type { FloodApiResponse, FloodBufferResponse, FloodFC, FloodStats } from "@/types";
+import type {
+  FloodApiResponse,
+  FloodBufferGeometryAsset,
+  FloodBufferResponse,
+  FloodFC,
+  FloodStats,
+} from "@/types";
 import type { FloodHexOverview } from "@/lib/flood-overview";
 import { LruCache } from "@/lib/lru";
 import { isValidFeature } from "@/lib/normalize";
@@ -198,6 +205,34 @@ export async function getFloodBufferAnalysis(
     throw new ApiError(res.status, `flood-buffer failed: ${res.status}`);
   }
   return (await res.json()) as FloodBufferResponse;
+}
+
+/**
+ * CLIENT: precomputed dissolved buffer GEOMETRY for one dataset + radius —
+ * the green "within N km of flood areas" zone. Built OFFLINE by
+ * scripts/build-flood-buffer.ts from the same snapshot the spatial query uses;
+ * the browser only downloads the tiny dissolved result (a few KB gzipped).
+ * Returns null when no asset base is configured; throws on HTTP/decode
+ * failure so the caller can degrade (analysis result still renders without
+ * the zone).
+ */
+const bufferGeomCache = new Map<string, FloodBufferGeometryAsset>();
+
+export async function getFloodBufferGeometry(
+  key: string,
+  radiusKm: number,
+  signal?: AbortSignal,
+): Promise<FloodBufferGeometryAsset | null> {
+  if (!floodDatasetBase()) return null;
+  const cacheKey = `${key}:${radiusKm}`;
+  const hit = bufferGeomCache.get(cacheKey);
+  if (hit) return hit; // tiny (a few KB) — undo/redo replays never refetch
+  const asset = await fetchGzipJson<FloodBufferGeometryAsset>(
+    floodBufferGeometryUrl(key, radiusKm),
+    signal,
+  );
+  bufferGeomCache.set(cacheKey, asset);
+  return asset;
 }
 
 /** CLIENT: hex overview by dataset KEY (covers year keys, which only exist on

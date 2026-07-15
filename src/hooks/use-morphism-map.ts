@@ -142,7 +142,6 @@ export function useMorphismMap({
   const dataRef = useRef<Partial<LayerData> | undefined>(data);
   const aggRef = useRef<ProvinceCount[] | null>(null);
   const admRef = useRef<ProvinceBoundaryFC | null>(null);
-  const bufferCentersRef = useRef<FeatureCollection<unknown> | null>(null);
   const appliedStyleRef = useRef<string>(styleFor(theme));
   // Camera duration multiplier — 1 normally; the view lowers it while an
   // undo/redo replays a scene so history steps use SHORTER flights than a new
@@ -225,9 +224,10 @@ export function useMorphismMap({
         layout: { visibility: "none" },
       });
       // Slot under the marker/label layers when they exist (mid-session add).
-      if (m.getLayer("buffer-line")) {
-        m.moveLayer(`${src}-fill`, "buffer-line");
-        m.moveLayer(`${src}-line`, "buffer-line");
+      // Flood tiles sit ABOVE the 5 km buffer zone but UNDER the points.
+      if (m.getLayer("hospitals")) {
+        m.moveLayer(`${src}-fill`, "hospitals");
+        m.moveLayer(`${src}-line`, "hospitals");
       }
     }
   };
@@ -525,38 +525,25 @@ export function useMorphismMap({
         ensurePmDataset(m, FLOOD_PM, floodPmUrlRef.current, palette.flood, 0.3);
       if (floodCmpAPmUrlRef.current)
         ensurePmDataset(m, FLOOD_A_PM, floodCmpAPmUrlRef.current, floodColorA, 0.32);
+      // 5 km analysis zone — REAL dissolved buffer geometry around the flood
+      // polygons (precomputed asset). Translucent green fill + dashed outline;
+      // ordered UNDER the flood layers so the blue flood data stays readable.
       addLayer({
         id: "buffer",
         type: "fill",
         source: "buffer",
-        paint: { "fill-color": palette.buffer, "fill-opacity": 0.14 },
+        paint: { "fill-color": palette.buffer, "fill-opacity": 0.16 },
         layout: { visibility: "none" },
       });
-      // Green dashed buffer outline (same source as the fill).
       addLayer({
         id: "buffer-line",
         type: "line",
         source: "buffer",
         paint: {
           "line-color": palette.buffer,
-          "line-width": 1.6,
+          "line-width": 2,
           "line-dasharray": [2, 2],
           "line-opacity": 0.9,
-        },
-        layout: { visibility: "none" },
-      });
-      // Buffer centre marker(s).
-      if (!m.getSource("buffer-center"))
-        m.addSource("buffer-center", { type: "geojson", data: EMPTY });
-      addLayer({
-        id: "buffer-center",
-        type: "circle",
-        source: "buffer-center",
-        paint: {
-          "circle-radius": 5,
-          "circle-color": palette.buffer,
-          "circle-stroke-width": 2,
-          "circle-stroke-color": readCssColor("--color-background-default-default"),
         },
         layout: { visibility: "none" },
       });
@@ -708,7 +695,6 @@ export function useMorphismMap({
       setData(m, "boundaries", adminBoundariesRef.current ?? EMPTY);
       setData(m, "adm-district", districtDataRef.current ?? EMPTY);
       setData(m, "adm-subdistrict", subdistrictDataRef.current ?? EMPTY);
-      setData(m, "buffer-center", bufferCentersRef.current ?? EMPTY);
       FLOOD_HEX_LEVELS.forEach((lvl) =>
         setData(m, `flood-hex-${lvl.key}`, floodOverviewRef.current?.[lvl.key] ?? EMPTY),
       );
@@ -767,7 +753,7 @@ export function useMorphismMap({
         setVis(`flood-hex-${lvl.key}-fill`, overviewOn);
         setVis(`flood-hex-${lvl.key}-line`, overviewOn);
       });
-      ["buffer-line", "buffer-center"].forEach((id) => {
+      ["buffer-line"].forEach((id) => {
         if (m.getLayer(id))
           m.setLayoutProperty(
             id,
@@ -962,7 +948,7 @@ export function useMorphismMap({
           map.setLayoutProperty(id, "visibility", overviewOn ? "visible" : "none");
       });
     });
-    ["buffer-line", "buffer-center"].forEach((id) => {
+    ["buffer-line"].forEach((id) => {
       if (map.getLayer(id))
         map.setLayoutProperty(
           id,
@@ -1128,18 +1114,6 @@ export function useMorphismMap({
     [applyZoomGating],
   );
 
-  // Set the buffer centre marker(s) (pass null to clear).
-  const setBufferCenters = useCallback(
-    (fc: FeatureCollection<unknown> | null) => {
-      bufferCentersRef.current = fc;
-      const m = mapRef.current;
-      if (m && m.getSource("buffer-center")) {
-        setData(m, "buffer-center", fc ?? EMPTY);
-      }
-    },
-    [],
-  );
-
   // Flood year-compare: feed side A's hex LODs ONCE into their banded sources
   // (side B is fed to the overlay map by the view). Pass null to leave compare
   // and restore the single flood layer. NO per-frame work happens after this —
@@ -1293,7 +1267,6 @@ export function useMorphismMap({
     setAggregate,
     setBoundaries,
     setAdminBoundaries,
-    setBufferCenters,
     setFloodCompare,
     setFloodCompareDetail,
     setDistricts,

@@ -8,6 +8,7 @@
 import { run as normalize } from "./normalize.test";
 import { run as floodDatasets } from "./flood-datasets.test";
 import { run as floodProximity } from "./flood-proximity.test";
+import { run as floodBufferGeometry } from "./flood-buffer-geometry.test";
 import { run as hospitalFilter } from "./hospital-filter.test";
 import { run as lru } from "./lru.test";
 import { run as scenarioResolution } from "./scenario-resolution.test";
@@ -17,6 +18,7 @@ const suites: [string, () => void | Promise<void>][] = [
   ["normalize", normalize],
   ["flood-datasets", floodDatasets],
   ["flood-proximity", floodProximity],
+  ["flood-buffer-geometry", floodBufferGeometry],
   ["hospital-filter", hospitalFilter],
   ["lru", lru],
   ["scenario-resolution", scenarioResolution],

@@ -56,6 +56,10 @@ export const floodOverviewUrlByKey = (key: string) =>
 export const floodPmtilesUrl = (key: string) =>
   `pmtiles://${floodDatasetBase()}/flood/${encodeURIComponent(key)}/detail.pmtiles`;
 
+/** Precomputed dissolved buffer geometry (scripts/build-flood-buffer.ts). */
+export const floodBufferGeometryUrl = (key: string, radiusKm: number) =>
+  `${floodDatasetBase()}/flood/${encodeURIComponent(key)}/buffer-${radiusKm}km.json.gz`;
+
 /** Latest CE year with real flood observations — DERIVED from the dataset
  *  registry (configs/flood-datasets.ts), never hand-edited. Future years in
  *  queries (e.g. B.E. 2569 → CE 2026) clamp to this so "current year" always

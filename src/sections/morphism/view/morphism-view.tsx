@@ -16,6 +16,7 @@ import {
 import {
   getFloodAreas,
   getFloodBufferAnalysis,
+  getFloodBufferGeometry,
   getFloodOverviewAsset,
   getFloodOverviewByKey,
   getFloodStats,
@@ -140,6 +141,11 @@ const MorphismView = () => {
     dateLabel: string;
     partial: boolean;
   } | null>(null);
+  // REAL dissolved 5 km buffer geometry (precomputed asset for the resolved
+  // snapshot) — rendered as the green analysis zone. Null = empty source.
+  const [bufferGeometry, setBufferGeometry] = useState<FeatureCollection | null>(
+    null,
+  );
   // Live flood areas for the active date-based flood scenario (Vallaris via the
   // /api/flood proxy). Null → the flood source is EMPTY (no mock geometry; the
   // layer renders nothing until real data is committed).
@@ -193,13 +199,13 @@ const MorphismView = () => {
     () => ({
       // Buffer scenario feeds only the analysis-result subset; otherwise full.
       hospitals: pointOverride ?? hospitalsFC ?? MOCK_HOSPITALS,
-      // No mock buffer geometry — the 5 km analysis is computed server-side and
-      // returns hospital points only (a nationwide 5 km union isn't drawable).
-      buffer: EMPTY_FC,
+      // REAL dissolved 5 km zone (precomputed offline from the SAME flood
+      // snapshot as the spatial query) — never mock geometry.
+      buffer: bufferGeometry ?? EMPTY_FC,
       // Live flood areas only — real data flow, no mock fallback.
       flood: floodAreas ?? EMPTY_FC,
     }),
-    [hospitalsFC, pointOverride, floodAreas],
+    [hospitalsFC, pointOverride, bufferGeometry, floodAreas],
   );
 
   // Popup body for a clicked hospital point — name + 24h status (i18n), mirrors
@@ -234,7 +240,6 @@ const MorphismView = () => {
     setAggregate,
     setBoundaries,
     setAdminBoundaries,
-    setBufferCenters,
     setFloodCompare,
     setFloodCompareDetail,
     setDistricts,
@@ -370,8 +375,8 @@ const MorphismView = () => {
     floodAbortRef.current?.abort();
     floodRequestIdRef.current += 1;
     setPointOverride(null);
-    setBufferCenters(null);
     setBufferAnalysis(null);
+    setBufferGeometry(null);
     setPointsAlwaysVisible(false);
     setAggregate(null);
     setAggregateState(null);
@@ -389,7 +394,6 @@ const MorphismView = () => {
     applyExact,
     setAggregate,
     setBoundaries,
-    setBufferCenters,
     setPointsAlwaysVisible,
     setCompareMode,
   ]);
@@ -642,9 +646,22 @@ const MorphismView = () => {
         report?.done(2, resp.timings.hospitalsLoadMs);
         report?.done(3, resp.timings.spatialMs);
 
-        // ── render: flood snapshot (PMTiles-first) + result hospitals ──────
+        // ── render: flood snapshot (PMTiles-first) + zone + hospitals ──────
         const tRender = performance.now();
         setFloodStatus("updating-map");
+        // Precomputed dissolved 5 km zone for the SAME snapshot (tiny asset;
+        // built offline by scripts/build-flood-buffer). A miss degrades to the
+        // result without the green zone — never mock geometry, never a
+        // browser-side buffering fallback.
+        const zonePromise = getFloodBufferGeometry(
+          resp.date,
+          resp.radiusKm,
+          controller.signal,
+        ).catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === "AbortError")
+            throw err;
+          return null;
+        });
         let fallbackBB: BBox | null = null;
         let floodShown = false;
         if (floodPmtilesEnabled()) {
@@ -681,19 +698,52 @@ const MorphismView = () => {
           fallbackBB = bboxOf(fc);
         }
 
+        // The 5 km zone geometry (same snapshot, same radius definition).
+        const zone = await zonePromise;
+        if (stale()) return { ok: true };
+        setBufferGeometry(
+          zone
+            ? {
+                type: "FeatureCollection",
+                features: [
+                  {
+                    type: "Feature",
+                    geometry: zone.geometry,
+                    properties: { radiusKm: zone.radiusKm, date: zone.date },
+                  },
+                ],
+              }
+            : null,
+        );
+
         // Hospitals: ONLY the analysis result set; points are the answer, so
         // they render at any zoom (result bounds are far below z11).
         setPointOverride(resp.hospitals);
         setPointsAlwaysVisible(true);
-        applyExact(["hospitals", "flood"], true);
+        applyExact(zone ? ["hospitals", "flood", "buffer"] : ["hospitals", "flood"], true);
         setBufferAnalysis({ dateLabel, partial });
         setTimeActive(true);
         setTimeLabel(dateLabel);
 
-        // Camera → analysis-result bounds (flood bbox when the result is
-        // empty); step 4 is done only after the camera finished (moveend).
+        // Camera → the FULL analysis extent: result hospitals ∪ the 5 km zone
+        // (zone ⊇ flood, so the whole picture is framed); step 4 is done only
+        // after the camera finished (moveend).
         setFloodStatus("moving-camera");
-        const bb = resp.bounds ?? fallbackBB;
+        const union = (
+          a: BBox | null,
+          b: [number, number, number, number] | null | undefined,
+        ): BBox | null =>
+          !a
+            ? b ?? null
+            : !b
+              ? a
+              : [
+                  Math.min(a[0], b[0]),
+                  Math.min(a[1], b[1]),
+                  Math.max(a[2], b[2]),
+                  Math.max(a[3], b[3]),
+                ];
+        const bb = union(resp.bounds ?? fallbackBB, zone?.bbox);
         if (bb) {
           await fitBoundsAndWait({
             sw: [bb[0], bb[1]],
@@ -830,8 +880,8 @@ const MorphismView = () => {
     setFloodAreas(null);
     setFloodPartial(false);
     setPointOverride(null);
-    setBufferCenters(null);
     setBufferAnalysis(null);
+    setBufferGeometry(null);
     setPointsAlwaysVisible(false);
     setAggregate(null);
     setAggregateState(null);
@@ -850,7 +900,6 @@ const MorphismView = () => {
     abortAndClearCompare,
     setAggregate,
     setBoundaries,
-    setBufferCenters,
     setPointsAlwaysVisible,
     setCompareMode,
     commitFloodTiles,
@@ -892,7 +941,6 @@ const MorphismView = () => {
       // server — never a baked date/count). runBufferScenario owns the whole
       // request → render → camera flow; its promise carries the live result.
       if (scenario.analysis === "flood-buffer") {
-        setBufferCenters(null);
         setAggregate(null);
         setAggregateState(null);
         setBoundaries(null);
@@ -906,6 +954,8 @@ const MorphismView = () => {
         setFloodAreas(null);
         setFloodPartial(false);
         floodBoundsRef.current = null;
+        // Previous zone is dropped only when the NEW result commits (the map
+        // keeps the last valid view while loading).
         // Hide overlays while loading — layers are revealed atomically once
         // the real analysis result is committed (no camera move here).
         applyExact([]);
@@ -919,8 +969,8 @@ const MorphismView = () => {
       if (scenario.flood) {
         const meta = scenario.flood;
         setPointOverride(null);
-        setBufferCenters(null);
         setBufferAnalysis(null);
+        setBufferGeometry(null);
         setPointsAlwaysVisible(false);
         setAggregate(null);
         setAggregateState(null);
@@ -955,6 +1005,7 @@ const MorphismView = () => {
       setFloodStatus("idle");
       floodBoundsRef.current = null;
       setBufferAnalysis(null);
+      setBufferGeometry(null);
       setPointsAlwaysVisible(false);
 
       if (scenario.mode === "aggregate") {
@@ -963,7 +1014,6 @@ const MorphismView = () => {
         // aggregation mode logically; only layer visibility flips by zoom).
         const isCmp = Boolean(scenario.regionCompare);
         setPointOverride(null);
-        setBufferCenters(null);
         // Region-compare hides hospital points entirely (region boundaries +
         // per-region counts only); normal aggregate reveals points at z≥11.
         applyExact(isCmp ? [] : ["hospitals"]);
@@ -1041,7 +1091,6 @@ const MorphismView = () => {
           const subset: HospitalFC = filterHospitalsByScope(source, scope);
           const features = subset.features;
           setPointOverride(subset);
-          setBufferCenters(null);
           // The province boundary + counts are drawn by the zoom-band hierarchy
           // (scoped to this province); the view only frames the camera.
 
@@ -1084,7 +1133,6 @@ const MorphismView = () => {
           }
         } else {
           setPointOverride(null);
-          setBufferCenters(null);
           if (scenario.camera) flyTo(scenario.camera);
         }
       }
@@ -1102,8 +1150,7 @@ const MorphismView = () => {
       applyExact,
       setAggregate,
       setBoundaries,
-      setBufferCenters,
-      detachCompare,
+        detachCompare,
       openCompare,
       commitFloodTiles,
       setCompareMode,
