@@ -222,7 +222,9 @@ function mergeYear(parts: { date: string; fc: FloodApiResponse }[]): FloodApiRes
     date: parts[0]?.date ?? "",
     numberMatched: features.length,
     numberReturned: features.length,
-    partial: parts.length === 0,
+    // A year union is only complete when EVERY source date was complete —
+    // a truncated component must never yield a complete annual dataset.
+    partial: parts.length === 0 || parts.some((p) => p.fc.partial === true),
   } as FloodApiResponse;
 }
 
