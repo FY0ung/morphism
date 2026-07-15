@@ -53,9 +53,13 @@ const DropdownRoot: React.FC<{
       <div
         ref={ref}
         className={`relative inline-flex ${className ?? ""}`}
-        // Escape closes the menu from anywhere inside (trigger or items).
+        // Escape closes the menu from anywhere inside (trigger or items) and
+        // returns focus to the trigger (first button in the root).
         onKeyDown={(e) => {
-          if (e.key === "Escape") setOpen(false);
+          if (e.key === "Escape") {
+            setOpen(false);
+            ref.current?.querySelector("button")?.focus();
+          }
         }}
       >
         {children}

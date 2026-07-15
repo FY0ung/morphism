@@ -32,7 +32,7 @@ export default function MapLoadingOverlay({ active }: Props) {
       role="status"
       aria-live="polite"
       className={cn(
-        "pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-background-default-default transition-opacity duration-300",
+        "pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-background-default-default/70 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none",
         active ? "opacity-100" : "opacity-0",
       )}
     >
