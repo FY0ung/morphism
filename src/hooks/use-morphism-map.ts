@@ -6,6 +6,15 @@ import { diagRegisterMap, diagUnregisterMap } from "@/lib/dev-diagnostics";
 import { FLOOD_COMPARE_SIDES } from "@/configs/flood-compare";
 import { ensurePmtilesProtocol } from "@/lib/map/pmtiles";
 import {
+  applyMorphismLayerOrder,
+  FLOOD_A_PM,
+  FLOOD_CMP_A_LAYERS,
+  FLOOD_CMP_A_SOURCES,
+  FLOOD_PM,
+  PM_SOURCE_LAYER,
+  pmLayerIds,
+} from "@/lib/map/layer-order";
+import {
   FLOOD_DETAIL_MIN_ZOOM,
   FLOOD_HEX_LEVELS,
   type FloodHexOverview,
@@ -61,24 +70,8 @@ export interface FloodCompareData {
   fine: FeatureCollection<unknown>;
 }
 
-// Compare-side layer ids on the MAIN map (side A only; side B lives on the
-// swipe overlay map). Stable ids — sources/layers are installed once and fed,
-// never torn down/recreated during a session.
-const FLOOD_CMP_A_SOURCES = [
-  ...FLOOD_HEX_LEVELS.map((lvl) => `flood-a-${lvl.key}`),
-  "flood-a-detail",
-] as const;
-const FLOOD_CMP_A_LAYERS = FLOOD_CMP_A_SOURCES.flatMap((s) => [
-  `${s}-fill`,
-  `${s}-line`,
-]);
-
-// PMTiles vector sources (stable ids, created once, re-pointed with setUrl —
-// never torn down per session). The source-layer name inside every archive.
-const PM_SOURCE_LAYER = "flood";
-const FLOOD_PM = "flood-pm"; // single-date detail
-const FLOOD_A_PM = "flood-a-pm"; // compare side A detail
-const pmLayerIds = (src: string) => [`${src}-fill`, `${src}-line`];
+// Layer/source IDs + stacking order live in the CENTRAL registry
+// (lib/map/layer-order) — imported above, never re-declared here.
 
 // Single overview marker (z < 6) — the focused dataset's TOTAL count at its
 // count-weighted centroid. Mirrors the HTML `summaryFeature()`.
@@ -690,38 +683,8 @@ export function useMorphismMap({
         },
       });
 
-      // Layer order (bottom→top): boundaries, flood, compare A (blue) then
-      // compare B (purple) on top of it, buffer, buffer centre, hospitals.
-      [
-        // Admin context fills/lines sit low (below flood/points).
-        "adm-subdistrict-fill",
-        "adm-subdistrict-line",
-        "adm-district-fill",
-        "adm-district-line",
-        // Single-date flood extent (hex overview + detail) sits ABOVE every
-        // administrative fill so it can never be hidden behind an admin polygon
-        // at any zoom. Overview fills under detail fill; lines above.
-        "flood-hex-coarse-fill",
-        "flood-hex-medium-fill",
-        "flood-hex-fine-fill",
-        "flood",
-        "flood-hex-coarse-line",
-        "flood-hex-medium-line",
-        "flood-hex-fine-line",
-        "flood-line",
-        ...pmLayerIds(FLOOD_PM),
-        ...FLOOD_CMP_A_LAYERS,
-        ...pmLayerIds(FLOOD_A_PM),
-        "buffer-line",
-        "buffer-center",
-        "hospitals",
-        // Count labels stay on top so numbers are never hidden by fills/points.
-        "agg-count",
-        "adm-district-label",
-        "adm-summary-count",
-      ].forEach((id) => {
-        if (m.getLayer(id)) m.moveLayer(id);
-      });
+      // Canonical stacking order — ONE registry (lib/map/layer-order).
+      applyMorphismLayerOrder(m);
 
       // Re-feed current scenario data (survives the style swap).
       if (dataRef.current) {
