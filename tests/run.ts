@@ -9,12 +9,14 @@ import { run as normalize } from "./normalize.test";
 import { run as floodDatasets } from "./flood-datasets.test";
 import { run as hospitalFilter } from "./hospital-filter.test";
 import { run as lru } from "./lru.test";
+import { run as scenarioResolution } from "./scenario-resolution.test";
 
 const suites: [string, () => void][] = [
   ["normalize", normalize],
   ["flood-datasets", floodDatasets],
   ["hospital-filter", hospitalFilter],
   ["lru", lru],
+  ["scenario-resolution", scenarioResolution],
 ];
 
 let failed = 0;

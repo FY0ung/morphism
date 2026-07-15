@@ -9,6 +9,7 @@ import type { FloodApiResponse, FloodFC, FloodStats } from "@/types";
 import type { FloodHexOverview } from "@/lib/flood-overview";
 import { LruCache } from "@/lib/lru";
 import { isValidFeature } from "@/lib/normalize";
+import { diagCounter } from "@/lib/dev-diagnostics";
 import { ApiError } from "./client";
 
 /**
@@ -52,6 +53,9 @@ export async function getFlood(year: number): Promise<FloodFC> {
 const FLOOD_CACHE_MAX_DATES = 3;
 const floodCache = new LruCache<string, FloodApiResponse>(FLOOD_CACHE_MAX_DATES);
 const floodInflight = new Map<string, Promise<FloodApiResponse>>();
+// Dev-only observability (no-ops in production).
+diagCounter("cache", "flood-dates", () => floodCache.size);
+diagCounter("inflight", "flood", () => floodInflight.size);
 
 /**
  * Fetch a gzip-compressed JSON asset and decompress it in the browser. R2's
