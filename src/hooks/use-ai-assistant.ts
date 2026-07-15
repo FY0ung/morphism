@@ -216,13 +216,18 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
         const s = resolve(m.query);
         return {
           ...m,
-          text: s.result,
+          // Runtime-computed results (analysis scenarios bake result: "") keep
+          // their LIVE text — only baked texts are language-swapped.
+          text: s.result || m.text,
           charts: s.charts ?? m.charts,
           // Re-resolved swipe carries language-correct labels for the card.
           swipe: s.swipe ?? m.swipe,
           steps: m.steps?.map((st, i) => ({
             ...st,
-            label: s.steps[i]?.label ?? st.label,
+            // Analysis steps carry RUNTIME labels (e.g. the resolved flood
+            // date) that a re-resolve can't know — keep them. They're
+            // tool-call strings, identical across languages.
+            label: s.analysis ? st.label : s.steps[i]?.label ?? st.label,
           })),
         };
       }),
