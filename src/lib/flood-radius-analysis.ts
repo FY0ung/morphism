@@ -67,6 +67,7 @@ export function geodesicCircle(
 interface FeatureNode {
   index: number;
   center: Position; // bbox centre of the feature
+  bbox: BBoxT; // feature bbox [w,s,e,n] (reused by the flood clip prefilter)
   weightKm2: number; // real flooded area (f_area/_area) in km²
   geometry: Geometry;
 }
@@ -90,6 +91,13 @@ export interface FloodRadiusResult {
   count: number;
   /** [w,s,e,n] over the circles (⊇ all matching hospitals). */
   bounds: BBoxT;
+  /** ORIGINAL flood features that INTERSECT the displayed circle union — i.e.
+   *  every polygon whose nearest point is ≤ radiusKm from a selected center.
+   *  Polygons entirely outside the radius are dropped. Geometry is preserved
+   *  as-is (never clipped to the circle edge or replaced with a mock). This is
+   *  a small subset, so the browser renders it directly instead of the full
+   *  flood snapshot. */
+  floodClipped: FeatureCollection;
 }
 
 export interface FloodRadiusOptions {
@@ -169,6 +177,7 @@ export function analyzeFloodRadius(
     nodes.push({
       index: i,
       center: [(bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2],
+      bbox: bb,
       weightKm2: featureWeightKm2(f.properties, bb),
       geometry: geom,
     });
@@ -316,6 +325,36 @@ export function analyzeFloodRadius(
     }
   }
 
+  // ── flood clip: ORIGINAL features intersecting the circle union ──────────
+  // A polygon intersects the disk of radius `radiusKm` around a center C iff
+  // its minimum distance to C is ≤ radiusKm (0 when C is inside it). Same
+  // distance definition as the hospital filter — one geometry model. A
+  // radius-expanded bbox prefilter skips almost every polygon before the exact
+  // edge math runs, so this stays cheap even on a national snapshot. Features
+  // are emitted UNCHANGED (original geometry + properties), deduped across
+  // circles, in their source order.
+  const dLat = radiusKm / ky;
+  const includedIdx = new Set<number>();
+  for (const nd of nodes) {
+    const midLat = (nd.bbox[1] + nd.bbox[3]) / 2;
+    const dLon = radiusKm / Math.max(1e-6, 111.32 * Math.cos((midLat * Math.PI) / 180));
+    const hit = selected.some((c) => {
+      const cx = c.center[0];
+      const cy = c.center[1];
+      // Radius-expanded bbox reject before any exact distance work.
+      if (
+        cx < nd.bbox[0] - dLon ||
+        cx > nd.bbox[2] + dLon ||
+        cy < nd.bbox[1] - dLat ||
+        cy > nd.bbox[3] + dLat
+      )
+        return false;
+      return distanceToFloodGeometryKm(c.center, nd.geometry, radiusKm) <= radiusKm;
+    });
+    if (hit) includedIdx.add(nd.index);
+  }
+  const floodClippedFeatures = flood.features.filter((_, i) => includedIdx.has(i));
+
   return {
     clusters: selected.map((c, id) => ({
       id,
@@ -328,5 +367,11 @@ export function analyzeFloodRadius(
     hospitals: { type: "FeatureCollection", features: matched },
     count: matched.length,
     bounds: [bw, bs, be, bn],
+    // Source features are generically typed (Feature<unknown>); emit them
+    // unchanged under the response's default-props FeatureCollection.
+    floodClipped: {
+      type: "FeatureCollection",
+      features: floodClippedFeatures,
+    } as unknown as FeatureCollection,
   };
 }

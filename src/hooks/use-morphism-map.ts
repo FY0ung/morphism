@@ -583,12 +583,26 @@ export function useMorphismMap({
         source: "hospitals",
         paint: {
           "circle-radius": 5,
-          // Clean solid marker — the Design System primary token only.
-          "circle-color": palette.hospitals,
-          // Stroke matches the fill (primary) so the dot reads as solid; no
-          // pink/red/secondary outline.
+          // Clean solid marker — primary (pigeon) token by default. Hospitals
+          // flagged `risk` by the 5 km flood-buffer analysis switch to the
+          // semantic error/danger red so the matches stand out; the expression
+          // re-reads the palette on a theme swap, so contrast holds in both
+          // light and dark. Only the analysis result set carries `risk`, so no
+          // other hospital scenario is affected.
+          "circle-color": [
+            "case",
+            ["==", ["get", "risk"], true],
+            palette.danger,
+            palette.hospitals,
+          ],
+          // Stroke matches the fill so the dot reads as solid.
           "circle-stroke-width": 1.5,
-          "circle-stroke-color": palette.hospitals,
+          "circle-stroke-color": [
+            "case",
+            ["==", ["get", "risk"], true],
+            palette.danger,
+            palette.hospitals,
+          ],
         },
         layout: { visibility: "none" },
       });

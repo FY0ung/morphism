@@ -148,7 +148,7 @@ async function analyse(
   const pre = await readGzJson<FloodRadiusAnalysisResponse>(
     `flood/${date}/analysis-${FLOOD_PROXIMITY_RADIUS_KM}km.json.gz`,
   );
-  if (pre && pre.version === 1 && pre.radiusKm === FLOOD_PROXIMITY_RADIUS_KM) {
+  if (pre && pre.version === 2 && pre.radiusKm === FLOOD_PROXIMITY_RADIUS_KM) {
     return { ...pre, complete: complete && pre.complete, timings: { ...pre.timings, resolveMs } };
   }
 
@@ -172,7 +172,7 @@ async function analyse(
   if (!result) throw new Error(`no analysable flood geometry for ${date}`);
   const fileName = flood.features[0]?.properties?.file_name;
   return {
-    version: 1,
+    version: 2,
     date,
     radiusKm: FLOOD_PROXIMITY_RADIUS_KM,
     clusters: result.clusters,
@@ -181,6 +181,7 @@ async function analyse(
     hospitals: result.hospitals,
     count: result.count,
     bounds: result.bounds,
+    floodClipped: result.floodClipped,
     // Truthful completeness: inherit the dataset's own flag; a truncated
     // source can miss flood polygons, so the analysis is partial too.
     complete: complete && flood.partial !== true,

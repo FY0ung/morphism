@@ -111,8 +111,10 @@ export default function Legend({
         <ul className="flex flex-col gap-1">
           {layers.hospitals.visible && (
             <li className="flex items-center gap-2 text-xs text-text-default-default">
+              {/* Matches the map: hospitals inside the 5 km radius are drawn in
+                  the semantic error/danger red (same token the marker uses). */}
               <span
-                className="size-3 flex-none rounded-full bg-background-primary-default"
+                className="size-3 flex-none rounded-full bg-background-error-default"
                 aria-hidden
               />
               {t("morphism.layer.hospitals")}

@@ -84,7 +84,8 @@ export interface FloodAnalysisCluster {
  * hospital filter use the SAME geometry definition.
  */
 export interface FloodRadiusAnalysisResponse {
-  version: 1;
+  /** Bumped to 2 when `floodClipped` was added — v1 assets are recomputed. */
+  version: 2;
   /** Resolved flood snapshot date (YYYY-MM-DD) — never silently substituted. */
   date: string;
   radiusKm: number;
@@ -99,6 +100,10 @@ export interface FloodRadiusAnalysisResponse {
   count: number;
   /** [w,s,e,n] over the circles (⊇ every matching hospital). */
   bounds: [number, number, number, number];
+  /** ORIGINAL flood polygons that INTERSECT the circle union (the map renders
+   *  only these in the buffer scenario — polygons entirely outside the 5 km
+   *  radius are dropped server-side; geometry is preserved, never mocked). */
+  floodClipped: FeatureCollection;
   /** False when the source flood dataset was truncated (partial notice). */
   complete: boolean;
   generatedAt: string;

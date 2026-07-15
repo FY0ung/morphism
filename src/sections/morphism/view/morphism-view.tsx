@@ -648,44 +648,24 @@ const MorphismView = () => {
         report?.done(2, resp.timings.hospitalsLoadMs);
         report?.done(3, resp.timings.spatialMs);
 
-        // ── render: flood snapshot (PMTiles-first) + circles + hospitals ────
+        // ── render: flood CLIPPED to the analysis radius + circles + hospitals
+        // Only the ORIGINAL flood polygons that intersect the 5 km circle union
+        // (computed server-side, delivered in the analysis response) are drawn —
+        // the complete snapshot is never fetched or rendered in this scenario,
+        // so nothing outside the circle shows. They go through the SAME geojson
+        // flood layer + hex overview the date scenarios use; any single-date
+        // PMTiles flood is cleared so the two never render together.
         const tRender = performance.now();
         setFloodStatus("updating-map");
-        let fallbackBB: BBox | null = null;
-        let floodShown = false;
-        if (floodPmtilesEnabled()) {
-          try {
-            const [stats, pmOverview] = await Promise.all([
-              getFloodStats(resp.date, controller.signal),
-              getFloodOverviewByKey(resp.date, controller.signal),
-            ]);
-            if (stale()) return { ok: true };
-            if (stats && stats.featureCount > 0 && pmOverview) {
-              setFloodOverview(pmOverview);
-              setFloodAreas(null);
-              setFloodPartial(partial);
-              commitFloodTiles(floodPmtilesUrl(resp.date));
-              fallbackBB = stats.bbox;
-              floodShown = true;
-            }
-          } catch (err) {
-            if (err instanceof DOMException && err.name === "AbortError")
-              throw err;
-            // asset miss → geojson fallback below
-          }
-        }
-        if (!floodShown) {
-          // Fallback (pmtiles disabled / asset miss): same real dataset via
-          // the existing detail flow — still never mock geometry.
-          const fc = await getFloodAreas(resp.date, controller.signal);
-          if (stale()) return { ok: true };
-          if (!fc.features.length) throw new Error("flood dataset empty");
-          setFloodOverview(buildFloodHexLevels(fc));
-          setFloodAreas(fc);
-          setFloodPartial(partial);
-          commitFloodExtent(fc);
-          fallbackBB = bboxOf(fc);
-        }
+        const clipped = (resp.floodClipped ?? EMPTY_FC) as FloodAreaFC;
+        commitFloodTiles(null);
+        setFloodOverview(buildFloodHexLevels(clipped));
+        setFloodAreas(clipped);
+        setFloodPartial(partial);
+        commitFloodExtent(clipped);
+        const fallbackBB: BBox | null = clipped.features.length
+          ? bboxOf(clipped)
+          : null;
 
         // The circular analysis geometry — the SAME circles the hospital
         // filter used server-side (never a different display geometry).

@@ -303,7 +303,7 @@ async function buildAnalysisAsset(
   if (!result) return null;
   const fileName = fc.features[0]?.properties?.file_name;
   return {
-    version: 1,
+    version: 2,
     date: key,
     radiusKm: FLOOD_PROXIMITY_RADIUS_KM,
     clusters: result.clusters,
@@ -312,6 +312,7 @@ async function buildAnalysisAsset(
     hospitals: result.hospitals,
     count: result.count,
     bounds: result.bounds,
+    floodClipped: result.floodClipped,
     complete: !fc.partial,
     generatedAt: new Date().toISOString(),
     source: { fileName: typeof fileName === "string" ? fileName : undefined },
