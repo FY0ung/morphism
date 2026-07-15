@@ -9,7 +9,6 @@ import {
   applyMorphismLayerOrder,
   FLOOD_A_PM,
   FLOOD_CMP_A_LAYERS,
-  FLOOD_CMP_A_SOURCES,
   FLOOD_PM,
   PM_SOURCE_LAYER,
   pmLayerIds,
