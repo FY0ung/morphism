@@ -34,6 +34,21 @@ export function run(): void {
   const ay = resolveScenario("จังหวัดพระนครศรีอยุธยามีโรงพยาบาลกี่แห่ง", t, "th");
   assert.deepEqual(ay.provinceNames, ["พระนครศรีอยุธยา"]);
 
+  // ── 5 km flood proximity → REAL runtime analysis (no baked date/count) ──
+  for (const q of [
+    "โรงพยาบาลภายในรัศมี 5 กม. จากพื้นที่น้ำท่วม",
+    "Hospitals within 5 km of flood areas",
+  ]) {
+    const buf = resolveScenario(q, t, "en");
+    assert.equal(buf.id, "buffer5km");
+    assert.equal(buf.mode, "analysis");
+    assert.equal(buf.analysis, "flood-buffer");
+    assert.deepEqual(buf.layers, ["flood", "hospitals"]);
+    assert.equal(buf.steps.length, 5); // resolve/load flood/load hospitals/spatial/render
+    assert.equal(buf.camera, undefined); // camera comes from LIVE result bounds
+    assert.equal(buf.result, ""); // result text is ALWAYS the live outcome
+  }
+
   // ── nationwide ────────────────────────────────────────────────────────────
   const nation = resolveScenario("โรงพยาบาลทั่วประเทศ", t, "th");
   assert.equal(nation.id, "nation");
@@ -69,7 +84,7 @@ export function run(): void {
   // ── year-to-year flood comparison (annual cumulative keys) ───────────────
   const ycmp = resolveScenario("เทียบน้ำท่วม 2565 กับ 2568", t, "th");
   assert.equal(ycmp.swipe?.dateA, "2022-10-20"); // year → latest snapshot
-  assert.equal(ycmp.swipe?.dateB, "2025-10-19");
+  assert.equal(ycmp.swipe?.dateB, "2025-12-18"); // 18 Dec 2025 registered
   assert.equal(ycmp.swipe?.keyA, "year-2022");
   assert.equal(ycmp.swipe?.keyB, "year-2025");
 

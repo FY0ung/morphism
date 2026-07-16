@@ -5,7 +5,12 @@ import {
   floodStatsUrl,
 } from "@/configs/flood-data";
 import { emptyFC } from "@/types";
-import type { FloodApiResponse, FloodFC, FloodStats } from "@/types";
+import type {
+  FloodApiResponse,
+  FloodFC,
+  FloodRadiusAnalysisResponse,
+  FloodStats,
+} from "@/types";
 import type { FloodHexOverview } from "@/lib/flood-overview";
 import { LruCache } from "@/lib/lru";
 import { isValidFeature } from "@/lib/normalize";
@@ -183,6 +188,32 @@ export async function getFloodStats(
   return stats;
 }
 
+/**
+ * CLIENT: circular 5 km analysis-radius. The server resolves the latest
+ * COMPLETE dataset when `date` is omitted, selects the major flood cluster(s),
+ * and returns circles + centers + the hospitals inside them (no raw flood
+ * geometry). Not cached here — the server route caches per date.
+ */
+export async function getFloodBufferAnalysis(
+  date?: string,
+  signal?: AbortSignal,
+): Promise<FloodRadiusAnalysisResponse> {
+  const res = await fetch(endpoint.flood.bufferAnalysis(date), { signal });
+  if (!res.ok) {
+    throw new ApiError(res.status, `flood-buffer failed: ${res.status}`);
+  }
+  return (await res.json()) as FloodRadiusAnalysisResponse;
+}
+
+/**
+ * CLIENT: precomputed dissolved buffer GEOMETRY for one dataset + radius —
+ * the green "within N km of flood areas" zone. Built OFFLINE by
+ * scripts/build-flood-buffer.ts from the same snapshot the spatial query uses;
+ * the browser only downloads the tiny dissolved result (a few KB gzipped).
+ * Returns null when no asset base is configured; throws on HTTP/decode
+ * failure so the caller can degrade (analysis result still renders without
+ * the zone).
+ */
 /** CLIENT: hex overview by dataset KEY (covers year keys, which only exist on
  *  the dataset base). Same payload shape as `getFloodOverviewAsset`. */
 export async function getFloodOverviewByKey(

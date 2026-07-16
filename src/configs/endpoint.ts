@@ -30,6 +30,10 @@ export const endpoint = {
     // /api/flood route handler), never here — this config is bundled to the
     // browser, so no upstream URL or key may appear in it.
     proxy: "/api/flood",
+    // Server-side 5 km flood-proximity analysis (hospitals near flood areas).
+    // No date param ⇒ the route resolves the latest COMPLETE dataset itself.
+    bufferAnalysis: (date?: string) =>
+      date ? `/api/flood-buffer?date=${encodeURIComponent(date)}` : "/api/flood-buffer",
     byDate: (date: string) => `/api/flood?date=${encodeURIComponent(date)}`,
     // Static pre-generated assets on the R2 CDN (gzip; browser decompresses).
     // Empty base ⇒ not configured ⇒ client falls back to the /api/flood proxy.

@@ -26,6 +26,7 @@ export const VALLARIS = {
 // Each observation date is an INDEPENDENT Vallaris collection. Keys must match
 // the public registry (configs/flood-datasets.ts) — verified below in dev.
 export const FLOOD_COLLECTION_BY_DATE: Record<string, string> = {
+  "2025-12-18": "6943c92d1304b524df25e57d",
   "2025-10-19": "68f47ef0e608127bf78935bd",
   "2025-10-17": "68f22d8be8d7c1423b82f2fa",
   "2025-10-16": "68f1f85495e7df41088dca4e",

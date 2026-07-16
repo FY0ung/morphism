@@ -6,9 +6,12 @@ import { initReactI18next } from "react-i18next";
 import merge from "lodash/merge";
 import thLocal from "./project/th.json";
 import enLocal from "./project/en.json";
+import jaLocal from "./project/ja.json";
 import { localStorageGetItem } from "@/lib/utils";
+import { resolveUiLang } from "@/lib/locale";
 import "dayjs/locale/th";
 import "dayjs/locale/en";
+import "dayjs/locale/ja";
 import dayjs from "dayjs";
 import buddhistEra from "dayjs/plugin/buddhistEra";
 import LocalizedFormat from "dayjs/plugin/localizedFormat";
@@ -31,6 +34,7 @@ if (!i18n.isInitialized) {
     resources: {
       en: { translation: merge({}, enLocal) },
       th: { translation: merge({}, thLocal) },
+      ja: { translation: merge({}, jaLocal) },
     },
     lng: DEFAULT_LANG,
     fallbackLng: DEFAULT_LANG,
@@ -50,9 +54,21 @@ const LanguageProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     const stored = localStorageGetItem("storage");
     const lang = stored && typeof stored === "object" ? stored.lang : undefined;
-    const next = lang === "th" ? "th" : "en"; // default English; honour saved Thai
+    // Default English; honour a saved Thai or Japanese preference. Any unknown
+    // value falls back to English (never a broken locale).
+    const next = resolveUiLang(lang);
     if (i18n.language !== next) void i18n.changeLanguage(next);
-    dayjs.locale(next === "th" ? "th" : "en-gb");
+    dayjs.locale(next === "th" ? "th" : next === "ja" ? "ja" : "en-gb");
+
+    // Keep <html lang> in sync so screen readers announce content in the active
+    // language (accessibility). This does NOT touch theme or layout direction,
+    // and never resets map data. Fires on every switch via i18n's event.
+    const syncHtmlLang = (lng: string) => {
+      document.documentElement.lang = resolveUiLang(lng);
+    };
+    syncHtmlLang(next);
+    i18n.on("languageChanged", syncHtmlLang);
+    return () => i18n.off("languageChanged", syncHtmlLang);
   }, []);
 
   return <>{children}</>;

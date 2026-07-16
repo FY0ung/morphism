@@ -12,9 +12,15 @@
      next/font (material/fonts) and exposed on <html>. --default-font-family makes
      the pair the page-wide base, matching the HTML reference
      (`--font-family-base: 'Poppins','Anuphan',system-ui,...`). Latin glyphs render
-     in Poppins; Thai glyphs fall through to Anuphan (loopless). */
+     in Poppins; Thai glyphs fall through to Anuphan (loopless). Japanese (CJK)
+     glyphs — absent from both webfonts — fall through to the platform's native
+     Japanese UI fonts (Hiragino / Yu Gothic / Meiryo / Noto Sans CJK) BEFORE the
+     generic sans-serif, so JP text renders cleanly with no tofu and no extra
+     webfont dependency (zero build/runtime risk). */
   --font-family-base:
-    var(--font-font), var(--font-thai), system-ui, -apple-system, sans-serif;
+    var(--font-font), var(--font-thai), "Hiragino Kaku Gothic ProN",
+    "Hiragino Sans", "Yu Gothic", "Yu Gothic UI", Meiryo, "Noto Sans CJK JP",
+    "Noto Sans JP", system-ui, -apple-system, sans-serif;
   --default-font-family: var(--font-family-base);
 
   /* ===== Background Colors ===== */

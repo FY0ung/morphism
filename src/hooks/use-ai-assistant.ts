@@ -121,8 +121,9 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
       // its true duration; steps stay "running" until their operation finishes
       // (load = fetch/paginate/dedupe, fit_bounds = until moveend). No fake
       // timers, so the displayed durations are the measured ones. ──────────────
-      if (scenario.flood || scenario.swipe) {
+      if (scenario.flood || scenario.swipe || scenario.analysis) {
         const doneMs: number[] = [];
+        const labelOverrides: Record<number, string> = {};
         let doneCount = 0;
         let failedAt: number | null = null;
         // Steps reflect the MAP's real state: a step is "done" only after its
@@ -135,7 +136,7 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
               : Math.min(doneCount + 1, scenario.steps.length);
           return scenario.steps.slice(0, revealTo).map((s, i) => ({
             id: stepId(i),
-            label: s.label,
+            label: labelOverrides[i] ?? s.label,
             status: failedAt === i ? "error" : i < doneCount ? "done" : "running",
             ms:
               failedAt === i || i < doneCount ? doneMs[i] ?? s.wait : undefined,
@@ -150,6 +151,10 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
           fail: (index, ms) => {
             if (ms != null) doneMs[index] = ms;
             failedAt = index;
+            patch(aiId, { steps: buildFloodSteps() });
+          },
+          relabel: (index, label) => {
+            labelOverrides[index] = label;
             patch(aiId, { steps: buildFloodSteps() });
           },
         };
@@ -211,13 +216,18 @@ export function useAiAssistant({ resolve, onScenario }: UseAiAssistantArgs) {
         const s = resolve(m.query);
         return {
           ...m,
-          text: s.result,
+          // Runtime-computed results (analysis scenarios bake result: "") keep
+          // their LIVE text — only baked texts are language-swapped.
+          text: s.result || m.text,
           charts: s.charts ?? m.charts,
           // Re-resolved swipe carries language-correct labels for the card.
           swipe: s.swipe ?? m.swipe,
           steps: m.steps?.map((st, i) => ({
             ...st,
-            label: s.steps[i]?.label ?? st.label,
+            // Analysis steps carry RUNTIME labels (e.g. the resolved flood
+            // date) that a re-resolve can't know — keep them. They're
+            // tool-call strings, identical across languages.
+            label: s.analysis ? st.label : s.steps[i]?.label ?? st.label,
           })),
         };
       }),

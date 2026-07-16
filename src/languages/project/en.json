@@ -33,7 +33,9 @@
       "admRegion": "Region boundaries",
       "admProvince": "Province boundaries",
       "admDistrict": "District boundaries",
-      "admSubdistrict": "Subdistrict boundaries"
+      "admSubdistrict": "Subdistrict boundaries",
+      "analysisRadius": "Analysis radius — 5 km",
+      "analysisCenter": "Analysis center"
     },
     "admStatus": {
       "loading": "Loading detailed boundaries…",
@@ -154,13 +156,19 @@
         "result": "Showing the flood extent from survey data — zoom out for the overview, zoom in for the actual boundary."
       },
       "buffer": {
-        "timeLabel": "2–8 Jun 2026 (last week)",
-        "interim": "This needs several analysis steps — let me go through them one at a time.",
-        "step1": "set_time_range(last week)",
-        "step2": "query: load flood extent",
-        "step3": "buffer(flood, 5 km) + center point",
-        "step4": "spatial_query(hospitals ∩ buffer)",
-        "result": "Found {{count}} hospitals in the at-risk radius (red dots) — one sentence, no GIS tooling required."
+        "interim": "This needs a real spatial analysis — resolving the latest complete flood snapshot first.",
+        "step1": "resolve_latest_complete_flood()",
+        "step2": "load_flood_event(latest)",
+        "step2Resolved": "load_flood_event({{date}})",
+        "step3": "load_hospitals()",
+        "step4": "spatial_query(hospitals in 5 km analysis radius)",
+        "step5": "render_analysis_result()",
+        "result": "Found {{count}} hospitals within the 5 km analysis radius around the selected flood area from the {{date}} flood snapshot.",
+        "resultEmpty": "No hospitals were found within the 5 km analysis radius around the selected flood area in the {{date}} flood snapshot.",
+        "partialNotice": "Note: this snapshot is a partial dataset (source truncated), so some flood areas — and therefore some hospitals — may be missing.",
+        "errorNoDataset": "No complete flood dataset is available right now, so I can't run the 5 km analysis. Please try again later.",
+        "errorLoad": "I couldn't load the 5 km flood analysis — the map keeps the previous result. Please try again.",
+        "resultMulti": "Found {{count}} hospitals within the 5 km analysis radii around {{circles}} selected flood areas from the {{date}} flood snapshot."
       },
       "province": {
         "interim": "Counting hospitals in {{province}} province…",

@@ -25,6 +25,7 @@
 
 /** Every registered observation date (ISO YYYY-MM-DD), newest first. */
 export const FLOOD_DATASET_DATES = [
+  "2025-12-18", // Nakhon Si Thammarat (South) — S1A_20251218
   "2025-10-19", // Nakhon Ratchasima (Northeast)
   "2025-10-17", // Uttaradit (North)
   "2025-10-16", // Nakhon Ratchasima (Northeast)

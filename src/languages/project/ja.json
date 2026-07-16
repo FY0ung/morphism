@@ -1,0 +1,243 @@
+{
+  "common": {
+    "appName": "App"
+  },
+  "morphism": {
+    "assistantName": "Morphism",
+    "chatHeader": "AIアシスタント",
+    "chatAria": "AIアシスタントとのチャット",
+    "greeting": "こんにちは！地図データを日常の言葉で調べるお手伝いをします。知りたいことを入力するか、下の例をタップしてください。",
+    "inputPlaceholder": "地図について何でも質問してください…",
+    "send": "質問を送信",
+    "thinking": "処理中…",
+    "suggestLabel": "質問例：",
+    "workspaceAria": "地図ワークスペース",
+    "mapAria": "タイの地図",
+    "attributionAria": "地図データの出典",
+    "timeAll": "すべてのデータ（時間フィルターなし）",
+    "clearTime": "時間フィルターを解除",
+    "context": "AIの認識：{{layers}}レイヤー · ズーム {{zoom}}",
+    "layersTitle": "データレイヤー",
+    "openLayers": "データレイヤーパネルを開く",
+    "aiMark": "AI",
+    "legendTitle": "凡例",
+    "legendEmpty": "分析レイヤーはまだありません",
+    "legendTotal": "合計 {{count}}",
+    "boundariesError": "県境界を読み込めませんでした — 合計のみ表示します",
+    "legend": {
+      "hospitalsPublic": "病院（公立）",
+      "boundaryData": "行政境界（データ領域のみ）",
+      "floodYear": "洪水地域 — {{year}}年",
+      "floodDate": "洪水地域 — {{date}}",
+      "floodSample": "データセットの一部サンプルを表示しています",
+      "admRegion": "地方境界",
+      "admProvince": "県境界",
+      "admDistrict": "郡境界",
+      "admSubdistrict": "町境界",
+      "analysisRadius": "分析半径 — 5 km",
+      "analysisCenter": "分析中心点"
+    },
+    "admStatus": {
+      "loading": "詳細な境界を読み込み中…",
+      "error": "詳細な境界を読み込めませんでした — 県レベルを表示します",
+      "empty": "このレベルにはデータがありません"
+    },
+    "popup": {
+      "open24": "24時間営業",
+      "normalHours": "通常営業時間"
+    },
+    "settingsTitle": "レイアウト方向",
+    "settingsAria": "設定",
+    "openSettings": "設定",
+    "theme": {
+      "title": "テーマ",
+      "dark": "ダーク",
+      "light": "ライト",
+      "colorblind": "色覚サポート",
+      "darkDesc": "暗い環境での使用に適しています。",
+      "lightDesc": "明るい環境で見やすくなります。",
+      "colorblindDesc": "アクセシビリティに配慮した配色です。",
+      "comingSoon": "近日公開",
+      "selected": "選択中"
+    },
+    "undo": "元に戻す",
+    "redo": "やり直す",
+    "zoom": "地図をズーム",
+    "zoomIn": "拡大",
+    "zoomOut": "縮小",
+    "resizeHandle": "チャットパネルのサイズ変更（ドラッグまたは矢印キー）",
+    "loading": "データを読み込み中…",
+    "error": "問題が発生しました。もう一度お試しください",
+    "exportCsv": "CSVをダウンロード",
+    "exportPng": "PNGをダウンロード",
+    "layer": {
+      "hospitals": "病院",
+      "flood": "洪水地域",
+      "buffer": "分析半径（バッファ）",
+      "boundaries": "行政境界"
+    },
+    "language": {
+      "title": "言語"
+    },
+    "dir": {
+      "ltr": "チャット左 · 地図右（既定）",
+      "rtl": "地図左 · チャット右"
+    },
+    "chips": {
+      "c1": "バンコクの24時間営業の病院を表示",
+      "c2": "チェンマイに病院はいくつありますか？",
+      "c3": "北部に病院はいくつありますか？",
+      "c4": "病院を比較：北部 vs 東北部",
+      "c5": "最近のソンクラーン期の洪水",
+      "c6": "洪水地域から5km以内の病院"
+    },
+    "steps": {
+      "parse": "質問を解釈中",
+      "query": "空間データを取得中",
+      "render": "レイヤーを描画中"
+    },
+    "reply": {
+      "hospitals": "該当する病院を地図に表示しました。",
+      "flood": "洪水地域を地図に表示しました。",
+      "buffer": "半径分析を実行し、地図に表示しました。",
+      "compare": "ご依頼の比較を、下のチャートとともに表示しました。",
+      "floodSwipe": "左右の洪水比較を開きました。仕切りをドラッグして2年分を比較してください。",
+      "generic": "ご質問について見つかった内容です。"
+    },
+    "swipe": {
+      "aria": "洪水スワイプ比較モード",
+      "divider": "比較の仕切り（ドラッグまたは左右の矢印キー）",
+      "valueText": "左側を {{pct}}% 表示中",
+      "side": "{{year}}年",
+      "close": "比較を閉じる",
+      "reopen": "比較を開く",
+      "reopenActive": "地図上で比較中"
+    },
+    "result": "地図レイヤーを更新しました",
+    "chartCompareTitle": "病院数の比較",
+    "chartCsvHeaderLabel": "項目",
+    "chartCsvHeaderValue": "件数",
+    "toast": {
+      "applied": "地図を更新しました",
+      "undone": "元に戻しました",
+      "redone": "やり直しました"
+    },
+    "flood": {
+      "error": "現在、洪水地域を読み込めませんでした",
+      "emptyDate": "{{date}} の洪水データはありません",
+      "emptyMonth": "{{month}} の洪水データはありません",
+      "loadingMap": "洪水マップを読み込み中…"
+    },
+    "scenario": {
+      "place": {
+        "currentArea": "現在の表示範囲"
+      },
+      "steps": {
+        "catalog": "search_catalog('hospital') → OpenStreetMap"
+      },
+      "hosp": {
+        "interim": "{{where}}の病院を検索中…",
+        "interim24": "{{where}}の24時間営業の病院を検索中…",
+        "resolveNone": "未指定（現在の表示）",
+        "stepResolve": "resolve_location() → {{target}}",
+        "stepFilter": "filter(province='{{province}}')",
+        "stepFilter24": "attribute_filter(hours='24/7')",
+        "result": "{{province}}の病院を地図に表示しました。",
+        "result24": "{{province}}の24時間営業の病院を地図に表示しました。",
+        "resultNoProvince": "病院を地図に表示しました。",
+        "result24NoProvince": "24時間営業の病院を地図に表示しました。"
+      },
+      "songkran": {
+        "timeLabel": "2025年4月13〜15日（ソンクラーン）",
+        "interim": "了解しました。「ソンクラーン」は4月13〜15日を指します。データを絞り込み中…",
+        "step1": "「ソンクラーン」を解釈 → 2025年4月13〜15日",
+        "step2": "set_time_range(2025-04-13 → 04-15)",
+        "step3": "toggle_layer('flood_events', visible)",
+        "result": "観測データによる浸水範囲を表示しています — 全体像は縮小、実際の境界は拡大でご覧ください。"
+      },
+      "buffer": {
+        "interim": "これは実際の空間分析が必要です — まず最新の完全な洪水スナップショットを特定します。",
+        "step1": "resolve_latest_complete_flood()",
+        "step2": "load_flood_event(latest)",
+        "step2Resolved": "load_flood_event({{date}})",
+        "step3": "load_hospitals()",
+        "step4": "spatial_query(hospitals in 5 km analysis radius)",
+        "step5": "render_analysis_result()",
+        "result": "{{date}}の洪水スナップショットにおいて、選択した洪水地域を中心とする半径5kmの分析範囲内に{{count}}か所の病院が見つかりました。",
+        "resultEmpty": "{{date}}の洪水スナップショットでは、選択した洪水地域を中心とする半径5kmの分析範囲内に病院は見つかりませんでした。",
+        "partialNotice": "注：このスナップショットは一部のみのデータセット（ソースが切り詰め）のため、一部の洪水地域、ひいては一部の病院が欠落している可能性があります。",
+        "errorNoDataset": "現在、完全な洪水データセットが利用できないため、5km分析を実行できません。しばらくしてからお試しください。",
+        "errorLoad": "5km洪水分析を読み込めませんでした — 地図は前回の結果を保持します。もう一度お試しください。",
+        "resultMulti": "{{date}}の洪水スナップショットにおいて、選択した{{circles}}か所の洪水地域を中心とする半径5kmの分析範囲内に{{count}}か所の病院が見つかりました。"
+      },
+      "province": {
+        "interim": "{{province}}の病院を集計中…",
+        "step1": "geocode('{{province}}') → 県の中心",
+        "step2": "aggregate(province='{{province}}') → 合計",
+        "result": "{{province}}には{{count}}か所の公立病院があります — 合計を地図に表示しています。"
+      },
+      "region": {
+        "interim": "{{region}}（{{count}}県）の病院を集約中…",
+        "step1": "resolve_region('{{region}}') → {{count}}県",
+        "step3": "group_by(province) in {{region}}",
+        "result": "{{region}}には{{provinces}}県にわたって{{count}}か所の公立病院があります — 県ごとの合計を地図に表示しています。",
+        "chartTitle": "県ごとの公立病院数 — {{region}}"
+      },
+      "compare": {
+        "interim": "公立病院を比較中：{{regionA}} · {{regionB}}…",
+        "step1": "resolve_entities() → {{count}}グループ",
+        "step3": "group_by(region) → 地域でグループ化（各地域の色を保持）",
+        "result": "地域別に公立病院数を比較しました — {{regionA}} vs {{regionB}}（下のドーナツをご覧ください）。",
+        "chartTitle": "公立病院数 — {{regionA}} vs {{regionB}}",
+        "centerLabel": "合計（病院）"
+      },
+      "nation": {
+        "interim": "全国の公立病院を集約中…",
+        "step1": "resolve_scope() → 全国（77県）",
+        "step2": "search_catalog('hospital') → 公的医療施設",
+        "step3": "group_by(region) → 6地域でグループ化",
+        "result": "全国では77県にわたって{{count}}か所の公立病院があります — 地域ごとの合計を地図に表示しています。",
+        "chartTitle": "地域別の公立病院 — 全国"
+      },
+      "floodCompare": {
+        "interim": "洪水の変化を分析中、{{yearLabelA}} vs {{yearLabelB}}…",
+        "step1": "resolve_periods() → {{yearLabelA}} · {{yearLabelB}}",
+        "step2": "load flood_extent({{yearA}}) + flood_extent({{yearB}})",
+        "step3": "measure_area(flood) → 年ごとの浸水面積",
+        "resultIntro": "左右の洪水比較を開きました。地図上の仕切りをドラッグして2年分を比較してください。",
+        "resultLeft": "{{yearLabel}}（左）：浸水面積 {{rai}} ライ（{{km2}} km²）",
+        "resultRight": "{{yearLabel}}（右）：浸水面積 {{rai}} ライ（{{km2}} km²）",
+        "resultSummary": "まとめ：浸水面積が{{areaDir}}{{pct}}%（{{sign}}{{raiDelta}} ライ）",
+        "increase": "増加 ",
+        "decrease": "減少 ",
+        "chartAreaTitle": "年別の浸水面積 — {{yearLabelA}} vs {{yearLabelB}}",
+        "chartAreaCenter": "ライ（合計）"
+      },
+      "flood": {
+        "searching": "洪水地域データを検索中…",
+        "searchingDate": "{{date}}の洪水地域データを検索中…",
+        "searchingMonth": "{{month}}の洪水地域データを検索中…",
+        "searchingYear": "{{year}}の洪水地域データを検索中…",
+        "stepResolve": "resolve_date('{{query}}') → {{date}}",
+        "stepLoad": "load_flood_overview(date='{{date}}')",
+        "stepAddLayer": "add_overview_layer('flood_hex')",
+        "stepFit": "fit_bounds('flood_extent')",
+        "emptyYear": "{{year}}の洪水地域データはありません",
+        "foundDateLine1": "{{date}}の洪水地域データが見つかりました。",
+        "foundDateLine2": "衛星画像による洪水地域の境界を地図に表示しています。",
+        "foundMonthLine1": "{{month}}の洪水地域データが見つかりました。",
+        "foundYearLine1": "{{year}}の洪水地域データが見つかりました。",
+        "snapshotLine": "システムで利用できるデータセットは {{date}} 時点のスナップショットです。",
+        "yearLabel": "{{year}}年",
+        "periodEarly": "上旬",
+        "periodMid": "中旬",
+        "periodLate": "下旬",
+        "searchingPeriod": "{{month}}{{period}}の洪水地域データを検索中…",
+        "foundPeriodLine1": "{{month}}{{period}}（{{range}}）の洪水地域データが見つかりました。",
+        "periodSnapshot": "この範囲で最新のスナップショットを表示：{{date}}。"
+      },
+      "unknown": "うまく理解できませんでした。病院、洪水、または地図で見たい地域について尋ねてみてください。"
+    },
+    "exportMenu": "チャートをエクスポート"
+  }
+}

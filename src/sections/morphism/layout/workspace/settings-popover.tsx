@@ -7,14 +7,19 @@ import { Icon } from "@/components/icons";
 import { IconButton } from "@/components/actionable/IconButtons";
 import { useMounted } from "@/hooks";
 import { cn, localStorageGetItem, localStorageSetItem } from "@/lib/utils";
+import { resolveUiLang, type UiLang } from "@/lib/locale";
 import dayjs from "dayjs";
 import { motion, useReducedMotion } from "motion/react";
 import type { LayoutDirection } from "@/types";
 
-const LANG_OPTIONS = [
+// Locale code `ja` shown compactly as "JP" to match the EN/TH pill style.
+type LangCode = UiLang;
+
+const LANG_OPTIONS: { value: LangCode; label: string }[] = [
   { value: "en", label: "EN" },
   { value: "th", label: "TH" },
-] as const;
+  { value: "ja", label: "JP" },
+];
 
 interface Props {
   open: boolean;
@@ -107,8 +112,8 @@ function LanguageSwitch({
   onChange,
   ariaLabel,
 }: {
-  value: "en" | "th";
-  onChange: (lng: "en" | "th") => void;
+  value: LangCode;
+  onChange: (lng: LangCode) => void;
   ariaLabel: string;
 }) {
   return (
@@ -193,11 +198,11 @@ export default function SettingsPopover({
   // Default to dark for SSR/first paint to avoid hydration mismatch.
   const activeTheme = mounted ? resolvedTheme ?? "dark" : "dark";
   // Language matches SSR/first paint ("en") until mounted, then reflects i18n.
-  const activeLang = mounted && i18n.language === "th" ? "th" : "en";
+  const activeLang: LangCode = mounted ? resolveUiLang(i18n.language) : "en";
 
-  const changeLanguage = (lng: "en" | "th") => {
+  const changeLanguage = (lng: LangCode) => {
     void i18n.changeLanguage(lng);
-    dayjs.locale(lng === "th" ? "th" : "en");
+    dayjs.locale(lng === "th" ? "th" : lng === "ja" ? "ja" : "en");
     const stored = localStorageGetItem("storage");
     const base = stored && typeof stored === "object" ? stored : {};
     localStorageSetItem("storage", { ...base, lang: lng });

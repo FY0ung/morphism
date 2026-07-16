@@ -7,31 +7,44 @@
 // node:assert/strict, which Bun implements.
 import { run as normalize } from "./normalize.test";
 import { run as floodDatasets } from "./flood-datasets.test";
+import { run as floodProximity } from "./flood-proximity.test";
+import { run as floodRadiusAnalysis } from "./flood-radius-analysis.test";
 import { run as hospitalFilter } from "./hospital-filter.test";
 import { run as lru } from "./lru.test";
 import { run as scenarioResolution } from "./scenario-resolution.test";
+import { run as japaneseIntent } from "./japanese-intent.test";
+import { run as i18n } from "./i18n.test";
 
-const suites: [string, () => void][] = [
+// Suites may be sync or async (flood-proximity awaits dataset resolution).
+const suites: [string, () => void | Promise<void>][] = [
   ["normalize", normalize],
   ["flood-datasets", floodDatasets],
+  ["flood-proximity", floodProximity],
+  ["flood-radius-analysis", floodRadiusAnalysis],
   ["hospital-filter", hospitalFilter],
   ["lru", lru],
   ["scenario-resolution", scenarioResolution],
+  ["japanese-intent", japaneseIntent],
+  ["i18n", i18n],
 ];
 
-let failed = 0;
-for (const [name, fn] of suites) {
-  try {
-    fn();
-    console.log(`✅ ${name}`);
-  } catch (err) {
-    failed++;
-    console.error(`❌ ${name}`);
-    console.error(err);
+async function main(): Promise<void> {
+  let failed = 0;
+  for (const [name, fn] of suites) {
+    try {
+      await fn();
+      console.log(`✅ ${name}`);
+    } catch (err) {
+      failed++;
+      console.error(`❌ ${name}`);
+      console.error(err);
+    }
   }
+  if (failed > 0) {
+    console.error(`\n${failed}/${suites.length} suite(s) failed`);
+    process.exit(1);
+  }
+  console.log(`\nAll ${suites.length} suites passed`);
 }
-if (failed > 0) {
-  console.error(`\n${failed}/${suites.length} suite(s) failed`);
-  process.exit(1);
-}
-console.log(`\nAll ${suites.length} suites passed`);
+
+void main();

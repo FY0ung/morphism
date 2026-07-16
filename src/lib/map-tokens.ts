@@ -4,12 +4,16 @@
 import type { LayerId } from "@/types";
 
 /** Map each map layer to a design-token custom property name. */
-const LAYER_TOKEN: Record<LayerId | "me", string> = {
+const LAYER_TOKEN: Record<LayerId | "me" | "danger", string> = {
   hospitals: "--color-background-primary-default", // pigeon
   flood: "--color-background-info-default", // blue
   buffer: "--color-background-success-default", // green
   boundaries: "--color-border-primary-default",
   me: "--color-background-secondary-default", // illusion
+  // Semantic danger/error red — used to highlight the hospitals INSIDE the 5 km
+  // analysis radius (the flood-buffer result set); resolves per theme so
+  // contrast holds in both light and dark.
+  danger: "--color-background-error-default",
 };
 
 export type MapPalette = Record<keyof typeof LAYER_TOKEN, string>;
@@ -45,5 +49,6 @@ export function readMapPalette(): MapPalette {
     buffer: read(LAYER_TOKEN.buffer),
     boundaries: read(LAYER_TOKEN.boundaries),
     me: read(LAYER_TOKEN.me),
+    danger: read(LAYER_TOKEN.danger),
   };
 }

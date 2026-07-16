@@ -56,6 +56,7 @@ export const floodOverviewUrlByKey = (key: string) =>
 export const floodPmtilesUrl = (key: string) =>
   `pmtiles://${floodDatasetBase()}/flood/${encodeURIComponent(key)}/detail.pmtiles`;
 
+
 /** Latest CE year with real flood observations — DERIVED from the dataset
  *  registry (configs/flood-datasets.ts), never hand-edited. Future years in
  *  queries (e.g. B.E. 2569 → CE 2026) clamp to this so "current year" always

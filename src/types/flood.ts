@@ -63,3 +63,58 @@ export interface FloodApiResponse extends FloodFeatureCollection {
    */
   partial: boolean;
 }
+
+// ── 5 km circular analysis-radius (/api/flood-buffer) ───────────────────────
+import type { HospitalFC } from "./hospital";
+
+/** One selected flood cluster of the analysis (center is [lng, lat]). */
+export interface FloodAnalysisCluster {
+  id: number;
+  center: [number, number];
+  /** Real flooded area of the cluster (km², from upstream f_area). */
+  areaKm2: number;
+  featureCount: number;
+}
+
+/**
+ * Result of the circular analysis-radius model (server-computed or served as
+ * the precomputed asset flood/<date>/analysis-<radius>km.json.gz): major flood
+ * cluster(s) → representative center(s) → true geodesic 5 km circle(s) →
+ * hospitals inside the union of those circles. The DISPLAYED circles and the
+ * hospital filter use the SAME geometry definition.
+ */
+export interface FloodRadiusAnalysisResponse {
+  /** Bumped to 2 when `floodClipped` was added — v1 assets are recomputed. */
+  version: 2;
+  /** Resolved flood snapshot date (YYYY-MM-DD) — never silently substituted. */
+  date: string;
+  radiusKm: number;
+  clusters: FloodAnalysisCluster[];
+  /** One geodesic circle Polygon per cluster ({ clusterId, radiusKm }). */
+  circles: FeatureCollection;
+  /** One center Point per cluster ({ clusterId }). */
+  centers: FeatureCollection;
+  /** Hospitals inside the circle union (risk-flagged, distanceKm = to the
+   *  nearest selected center). */
+  hospitals: HospitalFC;
+  count: number;
+  /** [w,s,e,n] over the circles (⊇ every matching hospital). */
+  bounds: [number, number, number, number];
+  /** ORIGINAL flood polygons that INTERSECT the circle union (the map renders
+   *  only these in the buffer scenario — polygons entirely outside the 5 km
+   *  radius are dropped server-side; geometry is preserved, never mocked). */
+  floodClipped: FeatureCollection;
+  /** False when the source flood dataset was truncated (partial notice). */
+  complete: boolean;
+  generatedAt: string;
+  /** Source metadata (dataset key + acquisition file_name of the snapshot). */
+  source: { fileName?: string };
+  /** Real per-phase durations measured ON THE SERVER (ms) — the chat's tool
+   *  steps display these, never fabricated numbers. */
+  timings: {
+    resolveMs: number;
+    floodLoadMs: number;
+    hospitalsLoadMs: number;
+    spatialMs: number;
+  };
+}

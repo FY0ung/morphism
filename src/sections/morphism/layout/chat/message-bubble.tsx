@@ -64,18 +64,24 @@ export default function MessageBubble({
         aria-busy={loading}
         className="text-sm rounded-2xl rounded-bl-sm border border-border-default-default bg-background-default-light p-4"
       >
-        <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-text-secondary-onlight">
-          {/* Static supplied artwork (decorative). No next/image for a plain asset. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/assets/morphism/fah.svg"
-            alt=""
-            aria-hidden="true"
-            draggable={false}
-            className="size-5 shrink-0"
-          />
-          {t("morphism.assistantName")}
-        </div>
+        {/* Identity row (avatar + name) on every AI reply EXCEPT the welcome
+            card — the header now carries the Morphism identity, so repeating it
+            inside the greeting would duplicate it. Removing the row leaves the
+            card's own p-4 top padding, so no empty gap remains. */}
+        {/* {message.id !== "greeting" && (
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-text-secondary-onlight"> */}
+            {/* Static supplied artwork (decorative). No next/image for a plain asset. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {/* <img
+              src="/assets/morphism/fah.svg"
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              className="size-5 shrink-0"
+            />
+            {t("morphism.assistantName")}
+          </div>
+        )} */}
 
         {message.pending && message.text === "" && (
           <p className="text-text-default-default font-medium">{t("morphism.thinking")}</p>

@@ -39,12 +39,22 @@ export default function ChatPanel({
       aria-label={t("morphism.chatAria")}
     >
       <header className="flex items-center gap-2 border-b border-border-default-default px-4 py-3">
-        <span
-          className="size-2 rounded-full bg-background-success-default"
-          aria-hidden
+        {/* Product identity in the header. Reuses the same avatar asset +
+            typography as the message identity row. The avatar carries the
+            accessible label ("Morphism"); the visible name is a decorative echo
+            (aria-hidden) so screen readers announce it only once. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/assets/morphism/fah.svg"
+          alt={t("morphism.assistantName")}
+          draggable={false}
+          className="size-5 shrink-0"
         />
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-text-default-onlight">
-          {t("morphism.chatHeader")}
+        <h2
+          aria-hidden="true"
+          className="text-xs font-semibold text-text-secondary-onlight"
+        >
+          {t("morphism.assistantName")}
         </h2>
       </header>
 

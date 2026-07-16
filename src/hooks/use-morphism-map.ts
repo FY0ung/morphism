@@ -129,6 +129,10 @@ export function useMorphismMap({
   // Zoom-gating + current scenario state, kept in refs so they survive a style
   // swap (setStyle wipes custom sources/layers; we re-feed from these).
   const hospitalsDesiredRef = useRef(false);
+  // Analysis-result mode (e.g. hospitals within 5 km of flood): the point set
+  // IS the result, so points render at ANY zoom — the z≥11 gate would hide the
+  // answer after the camera fits nationwide result bounds.
+  const pointsAlwaysRef = useRef(false);
   const aggregateActiveRef = useRef(false);
   const boundariesActiveRef = useRef(false);
   // Region-compare mode: region-coloured boundaries + ONE count label per region,
@@ -138,6 +142,7 @@ export function useMorphismMap({
   const dataRef = useRef<Partial<LayerData> | undefined>(data);
   const aggRef = useRef<ProvinceCount[] | null>(null);
   const admRef = useRef<ProvinceBoundaryFC | null>(null);
+  // Analysis center point(s) — survives a theme style swap via this ref.
   const bufferCentersRef = useRef<FeatureCollection<unknown> | null>(null);
   const appliedStyleRef = useRef<string>(styleFor(theme));
   // Camera duration multiplier — 1 normally; the view lowers it while an
@@ -220,7 +225,8 @@ export function useMorphismMap({
         paint: { "line-color": color, "line-width": 1, "line-opacity": 0.85 },
         layout: { visibility: "none" },
       });
-      // Slot under the marker/label layers when they exist (mid-session add).
+      // Slot under the marker/label layers when they exist (mid-session add):
+      // flood tiles ABOVE the circle fill but UNDER the dashed radius outline.
       if (m.getLayer("buffer-line")) {
         m.moveLayer(`${src}-fill`, "buffer-line");
         m.moveLayer(`${src}-line`, "buffer-line");
@@ -279,8 +285,10 @@ export function useMorphismMap({
     const districtReady = districtActiveRef.current && adm2Zoom;
 
     // Points ONLY at z ≥ 11 ("points"/"adm3-context"). Below that the filtered
-    // points feed the counts but are never rendered.
-    const showPoints = hospitalsDesiredRef.current && pointZoom;
+    // points feed the counts but are never rendered — EXCEPT in analysis-result
+    // mode, where the points are the answer and show at any zoom.
+    const showPoints =
+      hospitalsDesiredRef.current && (pointZoom || pointsAlwaysRef.current);
     // Count labels: province in "adm1" (and "adm2" until districts load),
     // district in "adm2" once ready, single total in "summary".
     const showProvCount =
@@ -519,37 +527,52 @@ export function useMorphismMap({
         ensurePmDataset(m, FLOOD_PM, floodPmUrlRef.current, palette.flood, 0.3);
       if (floodCmpAPmUrlRef.current)
         ensurePmDataset(m, FLOOD_A_PM, floodCmpAPmUrlRef.current, floodColorA, 0.32);
+      // 5 km ANALYSIS RADIUS — true geodesic circle(s) around the selected
+      // flood cluster center(s). Translucent green fill sits UNDER the flood
+      // layers (blue flood stays readable); the dashed outline + the center
+      // marker render ABOVE the flood, under the hospital points.
       addLayer({
         id: "buffer",
         type: "fill",
         source: "buffer",
-        paint: { "fill-color": palette.buffer, "fill-opacity": 0.14 },
+        paint: { "fill-color": palette.buffer, "fill-opacity": 0.16 },
         layout: { visibility: "none" },
       });
-      // Green dashed buffer outline (same source as the fill).
       addLayer({
         id: "buffer-line",
         type: "line",
         source: "buffer",
         paint: {
           "line-color": palette.buffer,
-          "line-width": 1.6,
+          "line-width": 2,
           "line-dasharray": [2, 2],
           "line-opacity": 0.9,
         },
         layout: { visibility: "none" },
       });
-      // Buffer centre marker(s).
+      // Analysis CENTER marker: hollow green ring + solid inner dot.
       if (!m.getSource("buffer-center"))
         m.addSource("buffer-center", { type: "geojson", data: EMPTY });
+      addLayer({
+        id: "buffer-center-ring",
+        type: "circle",
+        source: "buffer-center",
+        paint: {
+          "circle-radius": 9,
+          "circle-opacity": 0, // hollow — only the stroke ring is visible
+          "circle-stroke-width": 2,
+          "circle-stroke-color": palette.buffer,
+        },
+        layout: { visibility: "none" },
+      });
       addLayer({
         id: "buffer-center",
         type: "circle",
         source: "buffer-center",
         paint: {
-          "circle-radius": 5,
+          "circle-radius": 3.5,
           "circle-color": palette.buffer,
-          "circle-stroke-width": 2,
+          "circle-stroke-width": 1.5,
           "circle-stroke-color": readCssColor("--color-background-default-default"),
         },
         layout: { visibility: "none" },
@@ -560,12 +583,26 @@ export function useMorphismMap({
         source: "hospitals",
         paint: {
           "circle-radius": 5,
-          // Clean solid marker — the Design System primary token only.
-          "circle-color": palette.hospitals,
-          // Stroke matches the fill (primary) so the dot reads as solid; no
-          // pink/red/secondary outline.
+          // Clean solid marker — primary (pigeon) token by default. Hospitals
+          // flagged `risk` by the 5 km flood-buffer analysis switch to the
+          // semantic error/danger red so the matches stand out; the expression
+          // re-reads the palette on a theme swap, so contrast holds in both
+          // light and dark. Only the analysis result set carries `risk`, so no
+          // other hospital scenario is affected.
+          "circle-color": [
+            "case",
+            ["==", ["get", "risk"], true],
+            palette.danger,
+            palette.hospitals,
+          ],
+          // Stroke matches the fill so the dot reads as solid.
           "circle-stroke-width": 1.5,
-          "circle-stroke-color": palette.hospitals,
+          "circle-stroke-color": [
+            "case",
+            ["==", ["get", "risk"], true],
+            palette.danger,
+            palette.hospitals,
+          ],
         },
         layout: { visibility: "none" },
       });
@@ -761,7 +798,7 @@ export function useMorphismMap({
         setVis(`flood-hex-${lvl.key}-fill`, overviewOn);
         setVis(`flood-hex-${lvl.key}-line`, overviewOn);
       });
-      ["buffer-line", "buffer-center"].forEach((id) => {
+      ["buffer-line", "buffer-center-ring", "buffer-center"].forEach((id) => {
         if (m.getLayer(id))
           m.setLayoutProperty(
             id,
@@ -956,7 +993,7 @@ export function useMorphismMap({
           map.setLayoutProperty(id, "visibility", overviewOn ? "visible" : "none");
       });
     });
-    ["buffer-line", "buffer-center"].forEach((id) => {
+    ["buffer-line", "buffer-center-ring", "buffer-center"].forEach((id) => {
       if (map.getLayer(id))
         map.setLayoutProperty(
           id,
@@ -1122,7 +1159,7 @@ export function useMorphismMap({
     [applyZoomGating],
   );
 
-  // Set the buffer centre marker(s) (pass null to clear).
+  // Set the analysis center marker(s) (pass null to clear).
   const setBufferCenters = useCallback(
     (fc: FeatureCollection<unknown> | null) => {
       bufferCentersRef.current = fc;
@@ -1263,6 +1300,15 @@ export function useMorphismMap({
     [applyZoomGating],
   );
 
+  /** Toggle analysis-result point mode (points visible at ANY zoom). */
+  const setPointsAlwaysVisible = useCallback(
+    (on: boolean) => {
+      pointsAlwaysRef.current = on;
+      applyZoomGating();
+    },
+    [applyZoomGating],
+  );
+
   return {
     containerRef,
     map,
@@ -1271,6 +1317,7 @@ export function useMorphismMap({
     flyTo,
     fitBounds,
     fitBoundsAndWait,
+    setPointsAlwaysVisible,
     commitFloodExtent,
     commitFloodTiles,
     setFloodOverview,
