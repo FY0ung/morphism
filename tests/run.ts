@@ -12,6 +12,7 @@ import { run as floodRadiusAnalysis } from "./flood-radius-analysis.test";
 import { run as hospitalFilter } from "./hospital-filter.test";
 import { run as lru } from "./lru.test";
 import { run as scenarioResolution } from "./scenario-resolution.test";
+import { run as japaneseIntent } from "./japanese-intent.test";
 import { run as i18n } from "./i18n.test";
 
 // Suites may be sync or async (flood-proximity awaits dataset resolution).
@@ -23,6 +24,7 @@ const suites: [string, () => void | Promise<void>][] = [
   ["hospital-filter", hospitalFilter],
   ["lru", lru],
   ["scenario-resolution", scenarioResolution],
+  ["japanese-intent", japaneseIntent],
   ["i18n", i18n],
 ];
 

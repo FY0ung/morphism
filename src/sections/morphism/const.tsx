@@ -19,6 +19,18 @@ import {
   FLOOD_DATASET_DATE_SET,
 } from "@/configs/flood-datasets";
 import {
+  normalizeQuery,
+  FLOOD_TERMS,
+  HOSPITAL_TERMS,
+  BUFFER_TERMS,
+  H24_TERMS,
+  COMPARE_TERMS,
+  COUNT_TERMS,
+  NATION_TERMS,
+  LATEST_TERMS,
+  SONGKRAN_TERMS,
+} from "@/configs/intent-keywords";
+import {
   resolveFloodDate,
   detectFloodMonth,
   detectMonthPeriod,
@@ -1098,26 +1110,15 @@ export function resolveScenario(
    *  these instead of the static reference table. */
   counts?: ProvinceCounts,
 ): Scenario {
-  const q = raw.toLowerCase();
-  const isCompare = has(q, "เปรียบเทียบ", "เทียบ", "compare", " vs ", "vs");
-  const countIntent = has(
-    q,
-    "กี่แห่ง",
-    "มีกี่",
-    "จำนวน",
-    "ทั้งหมด",
-    "รวมกี่",
-    "รวมทั้ง",
-    "เท่าไหร่",
-    "เท่าไร",
-    "นับ",
-    "how many",
-    "total",
-  );
-  const isNation = has(q, "ทั่วประเทศ", "ทั้งประเทศ", "ทุกจังหวัด", "nationwide");
+  // Normalise the query (NFKC folds full-width → half-width, then lowercase) so
+  // Latin, Thai and Japanese aliases all match — see configs/intent-keywords.ts.
+  const q = normalizeQuery(raw);
+  const isCompare = has(q, ...COMPARE_TERMS);
+  const countIntent = has(q, ...COUNT_TERMS);
+  const isNation = has(q, ...NATION_TERMS);
 
   // Flood swipe-compare → two dated targets (year, month, or exact date).
-  if (isCompare && has(q, "น้ำท่วม", "flood")) {
+  if (isCompare && has(q, ...FLOOD_TERMS)) {
     const targets = resolveCompareTargets(raw, t, lang);
     if (targets) return scnFloodCompare(targets[0], targets[1], t);
   }
@@ -1125,24 +1126,18 @@ export function resolveScenario(
   if (isCompare) return scnCompareRegions(t, lang, counts);
 
   // Flood during Songkran (specific analysis).
-  if (has(q, "สงกรานต์", "songkran")) return scnSongkran(t);
+  if (has(q, ...SONGKRAN_TERMS)) return scnSongkran(t);
 
-  // Within N km of flood → buffer analysis.
-  if (
-    has(q, "รัศมี", "buffer", "กม.", "กม", "km", "ภายใน", "within") &&
-    has(q, "น้ำท่วม", "flood")
-  ) {
+  // Within N km of flood → buffer analysis (hospitals within 5 km of flood).
+  // A distance/spatial-relation term + a flood term is enough (TH · EN · JA).
+  if (has(q, ...BUFFER_TERMS) && has(q, ...FLOOD_TERMS)) {
     return scnBuffer5km(t);
   }
 
   // "Show 24-hour hospitals" (+ optional location) → POINT mode, scoped to the
   // EXTRACTED province (never hardcoded Bangkok). No province = current extent.
-  // English aliases ("24-hour", "24 hours") included — the EN suggestion chip
-  // is literally "Show 24-hour hospitals in Bangkok" (caught by the test suite).
-  if (
-    !countIntent &&
-    has(q, "24 ชั่วโมง", "24 ชม", "เปิด 24", "24/7", "24-hour", "24 hour", "24hr")
-  ) {
+  // The EN suggestion chip is literally "Show 24-hour hospitals in Bangkok".
+  if (!countIntent && has(q, ...H24_TERMS)) {
     return scnCityHospitals(detectProvince(raw), true, t, lang);
   }
 
@@ -1166,7 +1161,7 @@ export function resolveScenario(
 
   // Flood + a resolvable date/month → deterministic date-based flood scenario
   // (exact date or month snapshot; unknown dates give an explicit empty state).
-  if (has(q, "น้ำท่วม", "flood")) {
+  if (has(q, ...FLOOD_TERMS)) {
     const floodDate = resolveFloodDate(raw);
 
     // "ต้น/กลาง/ปลายเดือน" → a DATE RANGE within the month (e.g. mid-October =
@@ -1210,7 +1205,7 @@ export function resolveScenario(
     }
 
     // "latest / most recent flood" with no month or date → newest snapshot.
-    if (has(q, "ล่าสุด", "ล่าสุ", "latest", "recent", "newest", "most recent")) {
+    if (has(q, ...LATEST_TERMS)) {
       const d = latestSnapshotDate();
       return scnFloodByDate(
         {
@@ -1227,11 +1222,11 @@ export function resolveScenario(
   }
 
   // Generic flood request (no date) → survey extent.
-  if (has(q, "น้ำท่วม", "flood")) return scnSongkran(t);
+  if (has(q, ...FLOOD_TERMS)) return scnSongkran(t);
 
   // A hospital query with no more specific match → point view scoped to the
   // extracted province (or the current extent when none is mentioned).
-  if (has(q, "โรงพยาบาล", "รพ", "hospital", "ใกล้ฉัน", "near me")) {
+  if (has(q, ...HOSPITAL_TERMS)) {
     return scnCityHospitals(detectProvince(raw), false, t, lang);
   }
 
