@@ -71,6 +71,15 @@ export interface ChatMessage {
 export type LayoutDirection = "ltr" | "rtl";
 
 /**
+ * Colour-vision (data-palette) preference — INDEPENDENT of the appearance
+ * Theme (dark/light). "default" is the existing Morphism palette; "viridis"
+ * (CVD-safe sequential) and "blues" (single-hue) are registered but not yet
+ * implemented, so they are presented as disabled options. Selecting a theme
+ * must never change this value, and vice versa.
+ */
+export type ColorVisionMode = "default" | "viridis" | "blues";
+
+/**
  * A left–right flood swipe-compare. Each side is a resolved observation DATE
  * (YYYY-MM-DD) plus a display label — a year query resolves to that year's
  * representative snapshot, a date query to the exact date, so both share one

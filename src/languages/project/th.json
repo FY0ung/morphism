@@ -53,11 +53,8 @@
       "title": "ธีม",
       "dark": "โหมดมืด",
       "light": "โหมดสว่าง",
-      "colorblind": "โหมดตาบอดสี",
       "darkDesc": "เหมาะกับสภาพแสงน้อย",
       "lightDesc": "มองเห็นชัดในที่แสงจ้า",
-      "colorblindDesc": "ชุดสีที่เป็นมิตรกับการเข้าถึง",
-      "comingSoon": "เร็ว ๆ นี้",
       "selected": "เลือกอยู่"
     },
     "undo": "เลิกทำ (Undo)",
@@ -78,6 +75,15 @@
     },
     "language": {
       "title": "ภาษา"
+    },
+    "colorVision": {
+      "title": "การมองเห็นสี",
+      "default": "ค่าเริ่มต้น",
+      "viridis": "Viridis",
+      "viridisDesc": "รองรับผู้มีภาวะตาบอดสี",
+      "blues": "Blues",
+      "bluesDesc": "สีเดียว",
+      "comingSoon": "เร็ว ๆ นี้"
     },
     "dir": {
       "ltr": "แชทซ้าย · แผนที่ขวา (ค่าเริ่มต้น)",

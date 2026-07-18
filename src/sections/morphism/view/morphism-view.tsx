@@ -26,9 +26,11 @@ import { ApiError } from "@/lib/api/client";
 import { floodPmtilesEnabled, floodPmtilesUrl } from "@/configs/flood-data";
 import { endpoint } from "@/configs/endpoint";
 import { CAMERA } from "@/configs/motion";
-import { cn } from "@/lib/utils";
+import { DEFAULT_COLOR_VISION, selectColorVision } from "@/configs/settings";
+import { cn, localStorageGetItem, localStorageSetItem } from "@/lib/utils";
 import type {
   BBox,
+  ColorVisionMode,
   FeatureCollection,
   FloodAreaFC,
   FloodScenarioMeta,
@@ -114,6 +116,36 @@ const MorphismView = () => {
   const [direction, setDirection] = useState<LayoutDirection>("ltr");
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Colour-vision (data-palette) preference — INDEPENDENT of the theme; only
+  // "default" is selectable today, so this never triggers a recolour, never
+  // touches the map/scenario state, and persists like the language choice.
+  const [colorVision, setColorVision] =
+    useState<ColorVisionMode>(DEFAULT_COLOR_VISION);
+  useEffect(() => {
+    // Restore the persisted preference AFTER first paint (deferred — the lint
+    // rule forbids synchronous setState in effects; matches the useUsers
+    // pattern). Disabled/unknown stored values resolve back to "default".
+    const timer = setTimeout(() => {
+      const stored = localStorageGetItem("storage");
+      const v =
+        stored && typeof stored === "object"
+          ? (stored as { colorVision?: unknown }).colorVision
+          : undefined;
+      if (v === "default" || v === "viridis" || v === "blues") {
+        setColorVision(selectColorVision(DEFAULT_COLOR_VISION, v));
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+  const changeColorVision = useCallback((mode: ColorVisionMode) => {
+    setColorVision((prev) => {
+      const next = selectColorVision(prev, mode);
+      const stored = localStorageGetItem("storage");
+      const base = stored && typeof stored === "object" ? stored : {};
+      localStorageSetItem("storage", { ...base, colorVision: next });
+      return next;
+    });
+  }, []);
   const [timeActive, setTimeActive] = useState(false);
   const [timeLabel, setTimeLabel] = useState<string | null>(null);
   // Province-aggregation summary currently on the map (for the legend).
@@ -1281,6 +1313,8 @@ const MorphismView = () => {
               onToggle={() => setSettingsOpen((v) => !v)}
               direction={direction}
               onChange={(dir) => setDirection(dir)}
+              colorVision={colorVision}
+              onColorVisionChange={changeColorVision}
             />
 
             <Tag variant="filled" color="default" size="small" className="text-xs border border-border-default-default pointer-events-none">

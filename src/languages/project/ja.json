@@ -53,11 +53,8 @@
       "title": "テーマ",
       "dark": "ダーク",
       "light": "ライト",
-      "colorblind": "色覚サポート",
       "darkDesc": "暗い環境での使用に適しています。",
       "lightDesc": "明るい環境で見やすくなります。",
-      "colorblindDesc": "アクセシビリティに配慮した配色です。",
-      "comingSoon": "近日公開",
       "selected": "選択中"
     },
     "undo": "元に戻す",
@@ -78,6 +75,15 @@
     },
     "language": {
       "title": "言語"
+    },
+    "colorVision": {
+      "title": "色覚サポート",
+      "default": "デフォルト",
+      "viridis": "Viridis",
+      "viridisDesc": "色覚多様性対応",
+      "blues": "Blues",
+      "bluesDesc": "単色",
+      "comingSoon": "近日公開"
     },
     "dir": {
       "ltr": "チャット左 · 地図右（既定）",

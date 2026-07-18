@@ -49,6 +49,7 @@ export type {
   ChatRole,
   ChatMessage,
   LayoutDirection,
+  ColorVisionMode,
   MapCamera,
   MapBounds,
   ProvinceCount,
