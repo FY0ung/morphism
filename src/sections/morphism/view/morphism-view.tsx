@@ -27,6 +27,7 @@ import { floodPmtilesEnabled, floodPmtilesUrl } from "@/configs/flood-data";
 import { endpoint } from "@/configs/endpoint";
 import { CAMERA } from "@/configs/motion";
 import { DEFAULT_COLOR_VISION, selectColorVision } from "@/configs/settings";
+import { applyColorVisionMode, resolveAdminAreaColor } from "@/lib/data-palette";
 import { cn, localStorageGetItem, localStorageSetItem } from "@/lib/utils";
 import type {
   BBox,
@@ -146,6 +147,13 @@ const MorphismView = () => {
       return next;
     });
   }, []);
+  // Apply the mode to <html data-color-vision>: charts/legends/swatches
+  // re-resolve via CSS variables instantly, and each map instance observes the
+  // attribute and repaints its DATA layers with setPaintProperty (no setStyle,
+  // no data reload, no camera/scenario change).
+  useEffect(() => {
+    applyColorVisionMode(colorVision);
+  }, [colorVision]);
   const [timeActive, setTimeActive] = useState(false);
   const [timeLabel, setTimeLabel] = useState<string | null>(null);
   // Province-aggregation summary currently on the map (for the legend).
@@ -794,12 +802,19 @@ const MorphismView = () => {
       const all = boundariesRef.current;
       const names = scenario.provinceNames ?? [];
       const colorCache = new Map<string, string>();
+      // Region-compare keeps the CATEGORICAL per-region tokens in every mode
+      // (labels + outlines carry the identity; a sequential remap would imply
+      // ranking). The single-selection highlight resolves through the
+      // colour-vision palette (default = the same region token as before).
+      const categorical = Boolean(scenario.regionCompare);
       const colorFor = (region: string | null) => {
         const tokenVar =
           (region && REGION_TOKEN_VAR[region]) || REGION_DEFAULT_TOKEN;
         let c = colorCache.get(tokenVar);
         if (c === undefined) {
-          c = readCssColor(tokenVar);
+          c = categorical
+            ? readCssColor(tokenVar)
+            : resolveAdminAreaColor(tokenVar);
           colorCache.set(tokenVar, c);
         }
         return c;
@@ -847,11 +862,15 @@ const MorphismView = () => {
   );
 
   // Redraw the last aggregate scenario's boundaries once the province polygons
-  // arrive (they fetch async; a query can resolve before they load).
+  // arrive (they fetch async; a query can resolve before they load) AND when
+  // the colour-vision mode changes: the polygon colours are BAKED into feature
+  // properties, so the selected admin area + its legend swatch must be
+  // re-baked to follow the active palette. Draw-only — no camera, no data
+  // reload, no scenario rerun.
   useEffect(() => {
     const s = pendingAggScenarioRef.current;
     if (s && boundariesRef.current) drawAggregateBoundaries(s);
-  }, [boundariesVersion, drawAggregateBoundaries]);
+  }, [boundariesVersion, colorVision, drawAggregateBoundaries]);
 
   // Reset the map to the initial blank state (used when undo rewinds past the
   // first scenario). Mirrors the resets each scenario branch performs, but
