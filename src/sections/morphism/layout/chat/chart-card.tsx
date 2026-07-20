@@ -19,10 +19,12 @@ const VALUE_W = 40;
 
 // Token-only slice palette (fill for the SVG arc, matching legend swatch).
 const DONUT_PALETTE = [
-  "fill-background-primary-default",
-  "fill-background-info-default",
-  "fill-background-success-default",
-  "fill-background-warning-default",
+  // Colour-vision aware data-series roles (globals.css): default mode
+  // aliases the original primary/info/success/warning tokens exactly.
+  "fill-data-series-1",
+  "fill-data-series-2",
+  "fill-data-series-3",
+  "fill-data-series-4",
 ];
 
 /** SVG arc path for one donut slice (angles in radians, 0 = 12 o'clock). */
@@ -250,7 +252,7 @@ export default function ChartCard({ chart }: Props) {
                   width={w}
                   height={BAR_H}
                   rx={BAR_H / 2}
-                  className={row.swatch ?? "fill-background-primary-default"}
+                  className={row.swatch ?? "fill-data-series-1"}
                 />
                 {/* value label */}
                 <text

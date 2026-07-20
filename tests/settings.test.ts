@@ -37,12 +37,14 @@ export function run(): void {
     COLOR_VISION_OPTIONS.map((o) => [o.value, o]),
   );
   assert.equal(byValue.default.disabled, false, "Default must be enabled");
-  assert.equal(byValue.viridis.disabled, true, "Viridis must be disabled");
+  assert.equal(byValue.viridis.disabled, false, "Viridis must be ENABLED");
   assert.equal(byValue.blues.disabled, true, "Blues must be disabled");
 
-  // ── 6. Disabled options can never change the selected value ──────────────
-  assert.equal(selectColorVision("default", "viridis"), "default");
+  // ── 6. Selection rules: Viridis selectable; Blues (disabled) never is ───
+  assert.equal(selectColorVision("default", "viridis"), "viridis");
+  assert.equal(selectColorVision("viridis", "default"), "default"); // exact restore path
   assert.equal(selectColorVision("default", "blues"), "default");
+  assert.equal(selectColorVision("viridis", "blues"), "viridis");
   assert.equal(selectColorVision("default", "default"), "default");
   // Unknown values are rejected too (stale/foreign persisted values).
   assert.equal(
@@ -62,8 +64,8 @@ export function run(): void {
   // ── Segmented control contract: SHORT in-segment labels (no wrapping) +
   //    the long description moved to *Desc keys for tooltip/screen readers ──
   for (const opt of COLOR_VISION_OPTIONS) {
-    if (opt.disabled) {
-      assert.ok(opt.descKey, `${opt.value}: disabled segment needs a descKey`);
+    if (opt.value !== "default") {
+      assert.ok(opt.descKey, `${opt.value}: palette segment needs a descKey`);
     }
   }
 

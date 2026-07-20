@@ -101,19 +101,19 @@ export const LAYER_META: LayerMeta[] = [
   {
     id: "hospitals",
     labelKey: "morphism.layer.hospitals",
-    swatchClass: "bg-background-primary-default",
+    swatchClass: "bg-data-hospitals",
     round: true,
   },
   {
     id: "flood",
     labelKey: "morphism.layer.flood",
-    swatchClass: "bg-background-info-default",
+    swatchClass: "bg-data-flood",
     round: false,
   },
   {
     id: "buffer",
     labelKey: "morphism.layer.buffer",
-    swatchClass: "bg-background-success-default",
+    swatchClass: "bg-data-analysis",
     round: false,
   },
   {

@@ -344,10 +344,14 @@ export default function SettingsPopover({
             value: opt.value,
             label: t(opt.labelKey as "morphism.colorVision.default"),
             disabled: opt.disabled,
-            srLabel: opt.disabled
-              ? `${t(opt.labelKey as "morphism.colorVision.default")} — ${t(
-                  (opt.descKey ?? opt.labelKey) as "morphism.colorVision.default",
-                )}, ${t("morphism.colorVision.comingSoon")}`
+            srLabel: opt.descKey
+              ? opt.disabled
+                ? `${t(opt.labelKey as "morphism.colorVision.default")} — ${t(
+                    opt.descKey as "morphism.colorVision.default",
+                  )}, ${t("morphism.colorVision.comingSoon")}`
+                : `${t(opt.labelKey as "morphism.colorVision.default")} — ${t(
+                    opt.descKey as "morphism.colorVision.default",
+                  )}`
               : undefined,
           }))}
           value={colorVision}

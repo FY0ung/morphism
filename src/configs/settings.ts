@@ -45,7 +45,9 @@ export const COLOR_VISION_OPTIONS: {
     value: "viridis",
     labelKey: "morphism.colorVision.viridis",
     descKey: "morphism.colorVision.viridisDesc",
-    disabled: true,
+    // ENABLED — the Viridis data-palette tokens ship (globals.css); see
+    // docs/color-vision-viridis.md.
+    disabled: false,
   },
   {
     value: "blues",
