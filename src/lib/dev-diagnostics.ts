@@ -82,5 +82,9 @@ function snapshot(): Snapshot {
 
 // Install the console handle once (client + dev only).
 if (DEV && typeof window !== "undefined") {
-  (window as unknown as Record<string, unknown>).__morphismDiag = { snapshot };
+  (window as unknown as Record<string, unknown>).__morphismDiag = {
+    snapshot,
+    /** DEV-ONLY: direct map handle for console probing (paint/layout). */
+    getMap: (label = "main") => maps.get(label),
+  };
 }

@@ -10,7 +10,12 @@ import { cn, localStorageGetItem, localStorageSetItem } from "@/lib/utils";
 import { resolveUiLang, type UiLang } from "@/lib/locale";
 import dayjs from "dayjs";
 import { motion, useReducedMotion } from "motion/react";
-import type { LayoutDirection } from "@/types";
+import {
+  COLOR_VISION_OPTIONS,
+  THEME_OPTIONS,
+  selectColorVision,
+} from "@/configs/settings";
+import type { ColorVisionMode, LayoutDirection } from "@/types";
 
 // Locale code `ja` shown compactly as "JP" to match the EN/TH pill style.
 type LangCode = UiLang;
@@ -26,6 +31,9 @@ interface Props {
   onToggle: () => void;
   direction: LayoutDirection;
   onChange: (dir: LayoutDirection) => void;
+  /** Colour-vision palette preference — independent of the appearance theme. */
+  colorVision: ColorVisionMode;
+  onColorVisionChange: (mode: ColorVisionMode) => void;
 }
 
 const DIR_OPTIONS: { value: LayoutDirection; labelKey: string }[] = [
@@ -33,23 +41,9 @@ const DIR_OPTIONS: { value: LayoutDirection; labelKey: string }[] = [
   { value: "rtl", labelKey: "morphism.dir.rtl" },
 ];
 
-interface ThemeCard {
-  value: "dark" | "light" | "colorblind";
-  labelKey: string;
-  descKey: string;
-  disabled?: boolean;
-}
-
-const THEME_CARDS: ThemeCard[] = [
-  { value: "dark", labelKey: "morphism.theme.dark", descKey: "morphism.theme.darkDesc" },
-  { value: "light", labelKey: "morphism.theme.light", descKey: "morphism.theme.lightDesc" },
-  {
-    value: "colorblind",
-    labelKey: "morphism.theme.colorblind",
-    descKey: "morphism.theme.colorblindDesc",
-    disabled: true,
-  },
-];
+// Theme = APPEARANCE only (dark/light) — see configs/settings.ts. The colour-
+// vision palette moved to its own section below Language.
+type ThemeCard = (typeof THEME_OPTIONS)[number];
 
 /**
  * Accessible animated radio: a native (visually-hidden) input drives the ring
@@ -104,25 +98,45 @@ function AnimatedRadio({
 }
 
 /**
- * Segmented language switch: a full-width pill with a spring-slid highlight
- * (shared `layoutId`) that glides under the active option. Token-only colours.
+ * Segmented single-selection switch (shared by Language and Colour-vision): a
+ * pill container with a spring-slid highlight (`layoutId` per group — never
+ * shared across groups, or the knob would fly between controls) that glides
+ * under the active option. Token-only colours. Disabled segments keep radio
+ * semantics for AT, expose their full description via `title`/`aria-label`,
+ * and take no pointer/keyboard input (native `disabled` — not focusable).
  */
-function LanguageSwitch({
+function SegmentedSwitch<T extends string>({
+  options,
   value,
   onChange,
   ariaLabel,
+  layoutId,
+  fill,
 }: {
-  value: LangCode;
-  onChange: (lng: LangCode) => void;
+  options: {
+    value: T;
+    label: string;
+    disabled?: boolean;
+    /** Full description for tooltip + screen readers (disabled segments). */
+    srLabel?: string;
+  }[];
+  value: T;
+  onChange: (v: T) => void;
   ariaLabel: string;
+  layoutId: string;
+  /** Stretch segments to the popover width (for longer localized labels). */
+  fill?: boolean;
 }) {
   return (
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className="mb-3 inline-flex rounded-full border border-border-default-default bg-background-default-light p-1"
+      className={cn(
+        "mb-3 rounded-full border border-border-default-default bg-background-default-light p-1",
+        fill ? "flex w-full" : "inline-flex",
+      )}
     >
-      {LANG_OPTIONS.map((opt) => {
+      {options.map((opt) => {
         const active = value === opt.value;
         return (
           <button
@@ -130,12 +144,24 @@ function LanguageSwitch({
             type="button"
             role="radio"
             aria-checked={active}
-            onClick={() => onChange(opt.value)}
-            className="relative rounded-full px-4 py-1.5 text-center text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-border-primary-default"
+            disabled={opt.disabled}
+            aria-disabled={opt.disabled}
+            aria-label={opt.srLabel}
+            title={opt.srLabel}
+            onClick={() => {
+              if (!opt.disabled) onChange(opt.value);
+            }}
+            className={cn(
+              "relative rounded-full px-4 py-1.5 text-center text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-border-primary-default",
+              // Fill mode: segments share the width but NEVER below their
+              // label's natural size — long TH/JP labels must not clip.
+              fill && "min-w-fit flex-1 px-2",
+              opt.disabled && "cursor-not-allowed",
+            )}
           >
             {active && (
               <motion.span
-                layoutId="langSwitchKnob"
+                layoutId={layoutId}
                 transition={{ type: "spring", stiffness: 420, damping: 34 }}
                 className="absolute inset-0 rounded-full bg-background-primary-default shadow-sm"
                 aria-hidden
@@ -143,10 +169,12 @@ function LanguageSwitch({
             )}
             <span
               className={cn(
-                "relative z-10 transition-colors",
+                "relative z-10 block whitespace-nowrap transition-colors",
                 active
                   ? "text-text-primary-default"
-                  : "text-text-default-onlight",
+                  : opt.disabled
+                    ? "text-text-default-disable opacity-70"
+                    : "text-text-default-onlight",
               )}
             >
               {opt.label}
@@ -169,28 +197,22 @@ function ThemeThumb({ value }: { value: ThemeCard["value"] }) {
       </span>
     );
   }
-  if (value === "light") {
-    return (
-      <span className={cn(shell, "bg-background-default-light")} aria-hidden>
-        <Icon name="Sun" className="size-5 text-text-warning-onlight" />
-      </span>
-    );
-  }
-  // Color-blindness: a two-tone split swatch (colour-vision palette).
   return (
     <span className={cn(shell, "bg-background-default-light")} aria-hidden>
-      <span className="absolute inset-y-0 left-0 w-1/2 bg-background-info-default" />
-      <span className="absolute inset-y-0 right-0 w-1/2 bg-background-secondary-default" />
+      <Icon name="Sun" className="size-5 text-text-warning-onlight" />
     </span>
   );
 }
 
-/** Gear button + popover: theme (dark/light) and chat/map layout direction. */
+/** Gear button + popover: theme (dark/light), language, colour-vision palette
+ *  and chat/map layout direction. */
 export default function SettingsPopover({
   open,
   onToggle,
   direction,
   onChange,
+  colorVision,
+  onColorVisionChange,
 }: Props) {
   const { t, i18n } = useTranslation();
   const { resolvedTheme, setTheme } = useTheme();
@@ -256,42 +278,31 @@ export default function SettingsPopover({
           {t("morphism.theme.title")}
         </h3>
         <div role="radiogroup" aria-label={t("morphism.theme.title")} className="flex flex-col gap-1.5">
-          {THEME_CARDS.map((card) => {
-            const active = !card.disabled && activeTheme === card.value;
+          {THEME_OPTIONS.map((card) => {
+            const active = activeTheme === card.value;
             return (
               <button
                 key={card.value}
                 type="button"
                 role="radio"
                 aria-checked={active}
-                aria-disabled={card.disabled}
-                disabled={card.disabled}
-                onClick={() => {
-                  if (!card.disabled) setTheme(card.value);
-                }}
+                onClick={() => setTheme(card.value)}
                 className={cn(
-                  "group flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-border-primary-default focus-visible:ring-offset-1 focus-visible:ring-offset-background-default-default motion-reduce:transition-none",
-                  card.disabled
-                    ? "cursor-not-allowed border-border-default-default bg-background-default-default opacity-60"
-                    : active
-                      ? "cursor-pointer border-border-primary-default bg-background-primary-light"
-                      : "cursor-pointer border-border-default-default bg-background-default-default hover:border-border-primary-onlight hover:bg-background-default-light",
+                  "group flex w-full cursor-pointer items-center gap-3 rounded-xl border p-2.5 text-left transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-border-primary-default focus-visible:ring-offset-1 focus-visible:ring-offset-background-default-default motion-reduce:transition-none",
+                  active
+                    ? "border-border-primary-default bg-background-primary-light"
+                    : "border-border-default-default bg-background-default-default hover:border-border-primary-onlight hover:bg-background-default-light",
                 )}
               >
                 <ThemeThumb value={card.value} />
 
                 <span className="min-w-0 flex-1">
                   <span className="block text-[13px] font-semibold text-text-default-default">
-                    {t(card.labelKey as "morphism.theme.dark")}
+                    {t(card.labelKey)}
                   </span>
                   <span className="mt-0.5 block text-[11px] leading-snug text-text-default-onlight">
-                    {t(card.descKey as "morphism.theme.darkDesc")}
+                    {t(card.descKey)}
                   </span>
-                  {card.disabled && (
-                    <span className="mt-1.5 inline-flex items-center rounded-full border border-border-default-default bg-background-default-light px-2 py-0.5 text-[10px] font-medium text-text-default-onlight">
-                      {t("morphism.theme.comingSoon")}
-                    </span>
-                  )}
                 </span>
 
                 {active && (
@@ -311,10 +322,43 @@ export default function SettingsPopover({
         <h3 className="mb-2 mt-3 text-xs font-semibold uppercase tracking-wider text-text-default-onlight">
           {t("morphism.language.title")}
         </h3>
-        <LanguageSwitch
+        <SegmentedSwitch
+          options={LANG_OPTIONS}
           value={activeLang}
           onChange={changeLanguage}
           ariaLabel={t("morphism.language.title")}
+          layoutId="langSwitchKnob"
+        />
+
+        {/* Colour-vision palette — a DATA-PALETTE preference, deliberately
+            separate from the appearance Theme above. Same segmented pattern as
+            the Language selector; only "default" (the existing palette) is
+            selectable. Viridis/Blues carry disabled semantics with their full
+            description + Coming Soon exposed via tooltip/aria (short labels
+            only inside the segments — no wrapping). */}
+        <h3 className="mb-2 mt-3 text-xs font-semibold uppercase tracking-wider text-text-default-onlight">
+          {t("morphism.colorVision.title")}
+        </h3>
+        <SegmentedSwitch
+          options={COLOR_VISION_OPTIONS.map((opt) => ({
+            value: opt.value,
+            label: t(opt.labelKey as "morphism.colorVision.default"),
+            disabled: opt.disabled,
+            srLabel: opt.descKey
+              ? opt.disabled
+                ? `${t(opt.labelKey as "morphism.colorVision.default")} — ${t(
+                    opt.descKey as "morphism.colorVision.default",
+                  )}, ${t("morphism.colorVision.comingSoon")}`
+                : `${t(opt.labelKey as "morphism.colorVision.default")} — ${t(
+                    opt.descKey as "morphism.colorVision.default",
+                  )}`
+              : undefined,
+          }))}
+          value={colorVision}
+          onChange={(v) => onColorVisionChange(selectColorVision(colorVision, v))}
+          ariaLabel={t("morphism.colorVision.title")}
+          layoutId="colorVisionKnob"
+          fill
         />
 
         {/* Layout direction */}

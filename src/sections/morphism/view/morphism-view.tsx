@@ -26,9 +26,12 @@ import { ApiError } from "@/lib/api/client";
 import { floodPmtilesEnabled, floodPmtilesUrl } from "@/configs/flood-data";
 import { endpoint } from "@/configs/endpoint";
 import { CAMERA } from "@/configs/motion";
-import { cn } from "@/lib/utils";
+import { DEFAULT_COLOR_VISION, selectColorVision } from "@/configs/settings";
+import { applyColorVisionMode, resolveAdminAreaColor } from "@/lib/data-palette";
+import { cn, localStorageGetItem, localStorageSetItem } from "@/lib/utils";
 import type {
   BBox,
+  ColorVisionMode,
   FeatureCollection,
   FloodAreaFC,
   FloodScenarioMeta,
@@ -114,6 +117,43 @@ const MorphismView = () => {
   const [direction, setDirection] = useState<LayoutDirection>("ltr");
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Colour-vision (data-palette) preference — INDEPENDENT of the theme; only
+  // "default" is selectable today, so this never triggers a recolour, never
+  // touches the map/scenario state, and persists like the language choice.
+  const [colorVision, setColorVision] =
+    useState<ColorVisionMode>(DEFAULT_COLOR_VISION);
+  useEffect(() => {
+    // Restore the persisted preference AFTER first paint (deferred — the lint
+    // rule forbids synchronous setState in effects; matches the useUsers
+    // pattern). Disabled/unknown stored values resolve back to "default".
+    const timer = setTimeout(() => {
+      const stored = localStorageGetItem("storage");
+      const v =
+        stored && typeof stored === "object"
+          ? (stored as { colorVision?: unknown }).colorVision
+          : undefined;
+      if (v === "default" || v === "viridis" || v === "blues") {
+        setColorVision(selectColorVision(DEFAULT_COLOR_VISION, v));
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+  const changeColorVision = useCallback((mode: ColorVisionMode) => {
+    setColorVision((prev) => {
+      const next = selectColorVision(prev, mode);
+      const stored = localStorageGetItem("storage");
+      const base = stored && typeof stored === "object" ? stored : {};
+      localStorageSetItem("storage", { ...base, colorVision: next });
+      return next;
+    });
+  }, []);
+  // Apply the mode to <html data-color-vision>: charts/legends/swatches
+  // re-resolve via CSS variables instantly, and each map instance observes the
+  // attribute and repaints its DATA layers with setPaintProperty (no setStyle,
+  // no data reload, no camera/scenario change).
+  useEffect(() => {
+    applyColorVisionMode(colorVision);
+  }, [colorVision]);
   const [timeActive, setTimeActive] = useState(false);
   const [timeLabel, setTimeLabel] = useState<string | null>(null);
   // Province-aggregation summary currently on the map (for the legend).
@@ -762,12 +802,19 @@ const MorphismView = () => {
       const all = boundariesRef.current;
       const names = scenario.provinceNames ?? [];
       const colorCache = new Map<string, string>();
+      // Region-compare keeps the CATEGORICAL per-region tokens in every mode
+      // (labels + outlines carry the identity; a sequential remap would imply
+      // ranking). The single-selection highlight resolves through the
+      // colour-vision palette (default = the same region token as before).
+      const categorical = Boolean(scenario.regionCompare);
       const colorFor = (region: string | null) => {
         const tokenVar =
           (region && REGION_TOKEN_VAR[region]) || REGION_DEFAULT_TOKEN;
         let c = colorCache.get(tokenVar);
         if (c === undefined) {
-          c = readCssColor(tokenVar);
+          c = categorical
+            ? readCssColor(tokenVar)
+            : resolveAdminAreaColor(tokenVar);
           colorCache.set(tokenVar, c);
         }
         return c;
@@ -815,11 +862,15 @@ const MorphismView = () => {
   );
 
   // Redraw the last aggregate scenario's boundaries once the province polygons
-  // arrive (they fetch async; a query can resolve before they load).
+  // arrive (they fetch async; a query can resolve before they load) AND when
+  // the colour-vision mode changes: the polygon colours are BAKED into feature
+  // properties, so the selected admin area + its legend swatch must be
+  // re-baked to follow the active palette. Draw-only — no camera, no data
+  // reload, no scenario rerun.
   useEffect(() => {
     const s = pendingAggScenarioRef.current;
     if (s && boundariesRef.current) drawAggregateBoundaries(s);
-  }, [boundariesVersion, drawAggregateBoundaries]);
+  }, [boundariesVersion, colorVision, drawAggregateBoundaries]);
 
   // Reset the map to the initial blank state (used when undo rewinds past the
   // first scenario). Mirrors the resets each scenario branch performs, but
@@ -1281,6 +1332,8 @@ const MorphismView = () => {
               onToggle={() => setSettingsOpen((v) => !v)}
               direction={direction}
               onChange={(dir) => setDirection(dir)}
+              colorVision={colorVision}
+              onColorVisionChange={changeColorVision}
             />
 
             <Tag variant="filled" color="default" size="small" className="text-xs border border-border-default-default pointer-events-none">

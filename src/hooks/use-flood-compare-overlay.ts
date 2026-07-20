@@ -7,6 +7,7 @@ import {
   FLOOD_HEX_LEVELS,
 } from "@/lib/flood-overview";
 import { readCssColor } from "@/lib/map-tokens";
+import { observeColorVisionMode } from "@/lib/data-palette";
 import { diagRegisterMap, diagUnregisterMap } from "@/lib/dev-diagnostics";
 import { basemapStyleFor as styleFor } from "@/configs/map";
 import type { FloodCompareData } from "./use-morphism-map";
@@ -343,6 +344,33 @@ export function useFloodCompareOverlay({
     },
     [applyDetailRange],
   );
+
+  // Colour-vision palette switch: repaint side B's layers in place (no
+  // style swap, no data re-feed) — same pattern as the main map hook.
+  useEffect(() => {
+    return observeColorVisionMode(() => {
+      const m = overlayRef.current;
+      if (!m || !mapReadyRef.current) return;
+      const color = readCssColor(FLOOD_COMPARE_SIDES.b.cssVar);
+      const set = (id: string, prop: string) => {
+        if (m.getLayer(id))
+          m.setPaintProperty(
+            id,
+            prop as Parameters<MaplibreMap["setPaintProperty"]>[1],
+            color,
+          );
+      };
+      FLOOD_HEX_LEVELS.forEach((lvl) => {
+        set(`flood-b-${lvl.key}-fill`, "fill-color");
+        set(`flood-b-${lvl.key}-fill`, "fill-outline-color");
+        set(`flood-b-${lvl.key}-line`, "line-color");
+      });
+      set("flood-b-detail-fill", "fill-color");
+      set("flood-b-detail-line", "line-color");
+      set("flood-b-pm-fill", "fill-color");
+      set("flood-b-pm-line", "line-color");
+    });
+  }, []);
 
   return {
     /** Attach to the overlay map's container div (inside the clipped wrapper). */

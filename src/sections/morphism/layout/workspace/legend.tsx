@@ -111,10 +111,11 @@ export default function Legend({
         <ul className="flex flex-col gap-1">
           {layers.hospitals.visible && (
             <li className="flex items-center gap-2 text-xs text-text-default-default">
-              {/* Matches the map: hospitals inside the 5 km radius are drawn in
-                  the semantic error/danger red (same token the marker uses). */}
+              {/* Matches the map exactly: the analysis-result markers use the
+                  hospital-highlight DATA role (default = the same red as
+                  before; viridis = the ramp's high-contrast end). */}
               <span
-                className="size-3 flex-none rounded-full bg-background-error-default"
+                className="size-3 flex-none rounded-full bg-data-hospital-highlight"
                 aria-hidden
               />
               {t("morphism.layer.hospitals")}
@@ -123,7 +124,7 @@ export default function Legend({
           {layers.flood.visible && (
             <li className="flex items-center gap-2 text-xs text-text-default-default">
               <span
-                className="size-3 flex-none rounded-sm bg-background-info-default"
+                className="size-3 flex-none rounded-sm bg-data-flood"
                 aria-hidden
               />
               {t("morphism.legend.floodDate", { date: floodBuffer.dateLabel })}
@@ -133,14 +134,14 @@ export default function Legend({
             <>
               <li className="flex items-center gap-2 text-xs text-text-default-default">
                 <span
-                  className="size-3 flex-none rounded-full border-2 border-dashed border-border-success-default bg-background-success-light"
+                  className="size-3 flex-none rounded-full border-2 border-dashed border-data-analysis bg-data-analysis/15"
                   aria-hidden
                 />
                 {t("morphism.legend.analysisRadius")}
               </li>
               <li className="flex items-center gap-2 text-xs text-text-default-default">
                 <span
-                  className="size-3 flex-none rounded-full border-2 border-border-success-default bg-background-default-default"
+                  className="size-3 flex-none rounded-full border-2 border-data-analysis bg-background-default-default"
                   aria-hidden
                 />
                 {t("morphism.legend.analysisCenter")}
@@ -157,7 +158,7 @@ export default function Legend({
         <ul className="flex flex-col gap-1">
           <li className="flex items-center gap-2 text-xs text-text-default-default">
             <span
-              className="size-3 flex-none rounded-sm bg-background-info-default"
+              className="size-3 flex-none rounded-sm bg-data-flood"
               aria-hidden
             />
             {t("morphism.layer.flood")}
@@ -172,7 +173,7 @@ export default function Legend({
         <ul className="flex flex-col gap-1">
           <li className="flex items-center gap-2 text-xs text-text-default-default">
             <span
-              className="size-3 flex-none rounded-full bg-background-primary-default"
+              className="size-3 flex-none rounded-full bg-data-hospitals"
               aria-hidden
             />
             {t("morphism.legend.hospitalsPublic")}

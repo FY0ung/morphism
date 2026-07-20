@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readMapPalette, readCssColor } from "@/lib/map-tokens";
+import { observeColorVisionMode } from "@/lib/data-palette";
 import { diagRegisterMap, diagUnregisterMap } from "@/lib/dev-diagnostics";
 import { FLOOD_COMPARE_SIDES } from "@/configs/flood-compare";
 import { ensurePmtilesProtocol } from "@/lib/map/pmtiles";
@@ -592,7 +593,7 @@ export function useMorphismMap({
           "circle-color": [
             "case",
             ["==", ["get", "risk"], true],
-            palette.danger,
+            palette.hospitalHighlight,
             palette.hospitals,
           ],
           // Stroke matches the fill so the dot reads as solid.
@@ -600,7 +601,7 @@ export function useMorphismMap({
           "circle-stroke-color": [
             "case",
             ["==", ["get", "risk"], true],
-            palette.danger,
+            palette.hospitalHighlight,
             palette.hospitals,
           ],
         },
@@ -630,8 +631,10 @@ export function useMorphismMap({
       });
 
       // ── ADM2 district level (z ≥ 8.5): fill + line context + count labels ──
-      const admLineColor = readCssColor("--color-border-primary-default");
-      const admFillColor = readCssColor("--color-background-primary-default");
+      // Admin band context colours route through the colour-vision roles
+      // (default = the exact border/background primary tokens as before).
+      const admLineColor = palette.boundaries;
+      const admFillColor = palette.adminFill;
       if (!m.getSource("adm-district"))
         m.addSource("adm-district", { type: "geojson", data: EMPTY });
       addLayer({
@@ -1299,6 +1302,81 @@ export function useMorphismMap({
     },
     [applyZoomGating],
   );
+
+  // ── colour-vision palette switching (data layers ONLY) ───────────────────
+  // Re-reads the data-role CSS variables and repaints every DATA layer with
+  // setPaintProperty. No setStyle, no source/layer recreation, no data or
+  // camera change — sources, zoom, visibility, scenario and history survive
+  // untouched. Semantic (danger) and admin/boundary colours re-resolve to
+  // their UNCHANGED tokens, so they are effectively no-ops here.
+  const refreshPaletteColors = useCallback(() => {
+    const m = mapRef.current;
+    if (!m || !m.isStyleLoaded()) return;
+    const palette = readMapPalette();
+    const floodA = readCssColor(FLOOD_COMPARE_SIDES.a.cssVar);
+    const set = (
+      id: string,
+      prop: string,
+      value: unknown,
+    ) => {
+      if (m.getLayer(id))
+        m.setPaintProperty(
+          id,
+          prop as Parameters<MaplibreMap["setPaintProperty"]>[1],
+          value,
+        );
+    };
+    // Hospital points: base + analysis-result highlight are BOTH data roles
+    // (highlight aliases the semantic red in default mode — semantic tokens
+    // themselves never change).
+    const hosp = [
+      "case",
+      ["==", ["get", "risk"], true],
+      palette.hospitalHighlight,
+      palette.hospitals,
+    ];
+    set("hospitals", "circle-color", hosp);
+    set("hospitals", "circle-stroke-color", hosp);
+    // Single-date flood: geojson detail + hex overview + PMTiles detail.
+    set("flood", "fill-color", palette.flood);
+    set("flood-line", "line-color", palette.flood);
+    FLOOD_HEX_LEVELS.forEach((lvl) => {
+      set(`flood-hex-${lvl.key}-fill`, "fill-color", palette.flood);
+      set(`flood-hex-${lvl.key}-fill`, "fill-outline-color", palette.flood);
+      set(`flood-hex-${lvl.key}-line`, "line-color", palette.flood);
+    });
+    set(`${FLOOD_PM}-fill`, "fill-color", palette.flood);
+    set(`${FLOOD_PM}-line`, "line-color", palette.flood);
+    // Compare side A (hex LODs + detail + pm) on the main map.
+    FLOOD_HEX_LEVELS.forEach((lvl) => {
+      set(`flood-a-${lvl.key}-fill`, "fill-color", floodA);
+      set(`flood-a-${lvl.key}-fill`, "fill-outline-color", floodA);
+      set(`flood-a-${lvl.key}-line`, "line-color", floodA);
+    });
+    set("flood-a-detail-fill", "fill-color", floodA);
+    set("flood-a-detail-line", "line-color", floodA);
+    set(`${FLOOD_A_PM}-fill`, "fill-color", floodA);
+    set(`${FLOOD_A_PM}-line`, "line-color", floodA);
+    // 5 km analysis radius: circle fill + dashed outline + center marker.
+    set("buffer", "fill-color", palette.buffer);
+    set("buffer-line", "line-color", palette.buffer);
+    set("buffer-center-ring", "circle-stroke-color", palette.buffer);
+    set("buffer-center", "circle-color", palette.buffer);
+    // Administrative band context (district/subdistrict fills + lines). The
+    // aggregate province polygons (adm-fill/adm-line) use per-feature colours
+    // baked by the view — the view re-bakes them on a mode change.
+    set("adm-district-fill", "fill-color", palette.adminFill);
+    set("adm-district-line", "line-color", palette.boundaries);
+    set("adm-subdistrict-fill", "fill-color", palette.adminFill);
+    set("adm-subdistrict-line", "line-color", palette.boundaries);
+  }, []);
+
+  // Subscribe to colour-vision mode changes (html[data-color-vision]) — the
+  // map repaints itself; charts/legends update via CSS variables directly.
+  useEffect(() => {
+    if (!ready) return;
+    return observeColorVisionMode(refreshPaletteColors);
+  }, [ready, refreshPaletteColors]);
 
   /** Toggle analysis-result point mode (points visible at ANY zoom). */
   const setPointsAlwaysVisible = useCallback(

@@ -149,6 +149,37 @@
   --color-border-info-default: hsla(var(--border-info-default));
   --color-border-info-onlight: hsla(var(--border-info-onlight));
   --color-border-info-disable: hsla(var(--border-info-disable));
+
+  /* ── Color-vision palettes (ADDITIVE — no existing token is changed) ─────
+     Canonical Viridis samples (matplotlib "viridis", perceptually uniform
+     sequential; Smith & van der Walt, BIDS/matplotlib). Fixed discrete
+     samples at normalized positions t = 0, 0.25, 0.5, 0.75, 1.0 of the
+     continuous colormap. Lightness increases monotonically 1 → 5. */
+  --color-vision-viridis-1: #440154; /* t=0.00 · dark purple · low  */
+  --color-vision-viridis-2: #3b528b; /* t=0.25 · blue               */
+  --color-vision-viridis-3: #21918c; /* t=0.50 · teal               */
+  --color-vision-viridis-4: #5ec962; /* t=0.75 · green              */
+  --color-vision-viridis-5: #fde725; /* t=1.00 · yellow      · high */
+
+  /* DATA-VISUALIZATION ROLES — the single indirection every data colour goes
+     through (map paint via lib/map-tokens, chart fills, legend swatches,
+     compare sides). In DEFAULT mode each role aliases the EXACT existing
+     token, so the default rendering is bit-identical; the viridis overrides
+     live in @layer base below. UI + semantic tokens never route through
+     these roles. */
+  --color-data-hospitals: var(--data-viz-hospitals, var(--color-background-primary-default));
+  --color-data-flood: var(--data-viz-flood, var(--color-background-info-default));
+  --color-data-analysis: var(--data-viz-analysis, var(--color-background-success-default));
+  --color-data-compare-a: var(--data-viz-compare-a, var(--color-background-info-default));
+  --color-data-compare-b: var(--data-viz-compare-b, var(--color-background-primary-default));
+  --color-data-series-1: var(--data-viz-series-1, var(--color-background-primary-default));
+  --color-data-series-2: var(--data-viz-series-2, var(--color-background-info-default));
+  --color-data-series-3: var(--data-viz-series-3, var(--color-background-success-default));
+  --color-data-series-4: var(--data-viz-series-4, var(--color-background-warning-default));
+  --color-data-admin-fill: var(--data-viz-admin-fill, var(--color-background-primary-default));
+  --color-data-admin-outline: var(--data-viz-admin-outline, var(--color-border-primary-default));
+  --color-data-admin-area: var(--data-viz-admin-area, var(--color-background-primary-default));
+  --color-data-hospital-highlight: var(--data-viz-hospital-highlight, var(--color-background-error-default));
 }
 
 html,
@@ -175,6 +206,70 @@ a {
 }
 
 @layer base {
+  /* ── Data-visualization role DEFAULTS (colour-vision "default") ──────────
+     Each role aliases an EXISTING theme-aware token, so default mode renders
+     bit-identically to the pre-colour-vision checkpoint in BOTH themes. */
+  :root {
+    --data-viz-hospitals: var(--color-background-primary-default);
+    --data-viz-flood: var(--color-background-info-default);
+    --data-viz-analysis: var(--color-background-success-default);
+    --data-viz-compare-a: var(--color-background-info-default);
+    --data-viz-compare-b: var(--color-background-primary-default);
+    --data-viz-series-1: var(--color-background-primary-default);
+    --data-viz-series-2: var(--color-background-info-default);
+    --data-viz-series-3: var(--color-background-success-default);
+    --data-viz-series-4: var(--color-background-warning-default);
+    /* Administrative context (band fills/outlines) — exact current tokens. */
+    --data-viz-admin-fill: var(--color-background-primary-default);
+    --data-viz-admin-outline: var(--color-border-primary-default);
+    /* Selected admin AREA (single province highlight). Default mode never
+       reads this role (it keeps the per-region categorical token); defined
+       for completeness. */
+    --data-viz-admin-area: var(--color-background-primary-default);
+    /* Hospitals INSIDE the 5 km analysis radius — a DATA result role. In
+       default mode it aliases the SAME semantic error token used today, so
+       the default red is bit-identical; the semantic token itself is never
+       touched. */
+    --data-viz-hospital-highlight: var(--color-background-error-default);
+  }
+
+  /* ── Viridis overrides (data-visualization roles ONLY) ───────────────────
+     Role assignment is THEME-AWARE so WCAG 1.4.11 non-text contrast (≥3:1
+     against the basemap) holds: light basemap uses the DARK end of Viridis,
+     dark basemap uses the LIGHT end. Compare sides pair widely separated
+     samples (≥3:1 between A and B in both themes). See
+     docs/color-vision-viridis.md for the measured ratios. */
+  :root[data-color-vision="viridis"] {
+    --data-viz-hospitals: var(--color-vision-viridis-1); /* 14.2:1 on light */
+    --data-viz-flood: var(--color-vision-viridis-2); /* 7.1:1 on light */
+    --data-viz-analysis: var(--color-vision-viridis-3); /* 3.6:1 on light */
+    --data-viz-compare-a: var(--color-vision-viridis-3);
+    --data-viz-compare-b: var(--color-vision-viridis-1); /* A↔B 4.0:1 */
+    --data-viz-series-1: var(--color-vision-viridis-1);
+    --data-viz-series-2: var(--color-vision-viridis-2);
+    --data-viz-series-3: var(--color-vision-viridis-3);
+    --data-viz-series-4: var(--color-vision-viridis-4);
+    --data-viz-admin-fill: var(--color-vision-viridis-3);
+    --data-viz-admin-outline: var(--color-vision-viridis-1); /* 14.2:1 light */
+    --data-viz-admin-area: var(--color-vision-viridis-2); /* 7.1:1 light */
+    --data-viz-hospital-highlight: var(--color-vision-viridis-1);
+  }
+  :root[data-color-vision="viridis"].dark {
+    --data-viz-hospitals: var(--color-vision-viridis-5); /* 15.0:1 on dark */
+    --data-viz-flood: var(--color-vision-viridis-3); /* 5.0:1 on dark */
+    --data-viz-analysis: var(--color-vision-viridis-4); /* 9.0:1 on dark */
+    --data-viz-compare-a: var(--color-vision-viridis-3);
+    --data-viz-compare-b: var(--color-vision-viridis-5); /* A↔B 3.0:1 */
+    --data-viz-series-1: var(--color-vision-viridis-5);
+    --data-viz-series-2: var(--color-vision-viridis-4);
+    --data-viz-series-3: var(--color-vision-viridis-3);
+    --data-viz-series-4: var(--color-vision-viridis-2);
+    --data-viz-admin-fill: var(--color-vision-viridis-3);
+    --data-viz-admin-outline: var(--color-vision-viridis-5); /* 15.0:1 dark */
+    --data-viz-admin-area: var(--color-vision-viridis-3); /* 5.0:1 dark */
+    --data-viz-hospital-highlight: var(--color-vision-viridis-5);
+  }
+
   :root {
 /* background default*/
     --background-default-default: 0, 0%, 100%;
@@ -621,3 +716,5 @@ html {
     animation-duration: 1ms;
   }
 }
+
+/* colour-vision roles active */

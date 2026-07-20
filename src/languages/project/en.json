@@ -53,11 +53,8 @@
       "title": "Theme",
       "dark": "Dark",
       "light": "Light",
-      "colorblind": "Color Blindness",
       "darkDesc": "Recommended for low-light environments.",
       "lightDesc": "Better visibility in bright environments.",
-      "colorblindDesc": "Accessibility-friendly color palette.",
-      "comingSoon": "Coming Soon",
       "selected": "Selected"
     },
     "undo": "Undo",
@@ -78,6 +75,15 @@
     },
     "language": {
       "title": "Language"
+    },
+    "colorVision": {
+      "title": "Color Blindness",
+      "default": "Default",
+      "viridis": "Viridis",
+      "viridisDesc": "CVD-safe",
+      "blues": "Blues",
+      "bluesDesc": "Monochrome",
+      "comingSoon": "Coming Soon"
     },
     "dir": {
       "ltr": "Chat left · Map right (default)",
