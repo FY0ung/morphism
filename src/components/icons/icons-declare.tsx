@@ -35,6 +35,7 @@ export { default as Undo } from "./list/undo";
 export { default as Redo } from "./list/redo";
 export { default as Download01 } from "./list/download-01";
 export { default as MarkerPin } from "./list/marker-pin";
+export { default as SpacingWidth01 } from "./list/spacing-width-01";
 
 
 

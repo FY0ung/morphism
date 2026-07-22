@@ -52,7 +52,7 @@ export default function ChatPanel({
         />
         <h2
           aria-hidden="true"
-          className="text-xs font-semibold text-text-secondary-onlight"
+          className="text-xs font-semibold text-text-primary-onlight"
         >
           {t("morphism.assistantName")}
         </h2>

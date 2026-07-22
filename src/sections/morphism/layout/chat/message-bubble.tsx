@@ -104,10 +104,10 @@ export default function MessageBubble({
             is already open, so the card doubles as the "how do I get back?"
             affordance after Close comparison. */}
         {swipeSel && onReopenCompare && !loading && (
-          <div className="mt-3">
+          <div className="flex mt-4 w-full justify-end">
             <Button
               type="button"
-              color="secondary"
+              color="primary"
               size="small"
               disabled={swipeIsOpen}
               aria-disabled={swipeIsOpen}
@@ -117,7 +117,8 @@ export default function MessageBubble({
                 swipeIsOpen && "cursor-default opacity-60",
               )}
             >
-              <span
+              <Icon name={"SpacingWidth01"} />
+              {/* <span
                 className={cn(
                   "size-2.5 rounded-full",
                   FLOOD_COMPARE_SIDES.a.bg,
@@ -130,7 +131,7 @@ export default function MessageBubble({
                   FLOOD_COMPARE_SIDES.b.bg,
                 )}
                 aria-hidden
-              />
+              /> */}
               {swipeIsOpen
                 ? t("morphism.swipe.reopenActive")
                 : t("morphism.swipe.reopen")}

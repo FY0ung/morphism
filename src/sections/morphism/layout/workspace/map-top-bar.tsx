@@ -33,7 +33,7 @@ export default function MapTopBar({
       >
         <Icon name="Clock" />
         <span>{timeActive && timeLabel ? timeLabel : t("morphism.timeAll")}</span>
-        {timeActive && (
+        {/* {timeActive && (
           <IconButton
             color="default"
             variant="text"
@@ -47,7 +47,7 @@ export default function MapTopBar({
           >
             <Icon name="XClose" />
           </IconButton>
-        )}
+        )} */}
       </div>
     </div>
   );
