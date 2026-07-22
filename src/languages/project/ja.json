@@ -132,6 +132,7 @@
       "error": "現在、洪水地域を読み込めませんでした",
       "emptyDate": "{{date}} の洪水データはありません",
       "emptyMonth": "{{month}} の洪水データはありません",
+      "emptyRange": "{{range}} の洪水データはありません",
       "loadingMap": "洪水マップを読み込み中…"
     },
     "scenario": {
@@ -239,8 +240,12 @@
         "periodMid": "中旬",
         "periodLate": "下旬",
         "searchingPeriod": "{{month}}{{period}}の洪水地域データを検索中…",
+        "stepResolvePeriod": "resolve_period('{{month}}{{period}}') → {{range}}",
+        "stepSelectSnapshot": "select_latest_available_snapshot({{range}}) → {{date}}",
+        "stepSelectSnapshotEmpty": "select_latest_available_snapshot({{range}})",
+        "emptyPeriod": "{{month}}{{period}}（{{range}}）の洪水地域データはありません。",
         "foundPeriodLine1": "{{month}}{{period}}（{{range}}）の洪水地域データが見つかりました。",
-        "periodSnapshot": "この範囲で最新のスナップショットを表示：{{date}}。"
+        "periodSnapshot": "この範囲で利用できる最新のスナップショットを表示：{{date}}。"
       },
       "unknown": "うまく理解できませんでした。病院、洪水、または地図で見たい地域について尋ねてみてください。"
     },

@@ -21,27 +21,37 @@ export default function ToolSteps({ steps }: Props) {
       {steps.map((step) => {
         const done = step.status === "done";
         const error = step.status === "error";
+
         return (
           <li
             key={step.id}
             className={cn(
-              "flex min-h-8 items-center gap-2 rounded-lg border p-2 text-xs font-medium",
-              done && "border-border-success-default text-text-success-onlight",
-              error && "border-border-error-default text-text-error-onlight",
+              "grid min-h-8 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 rounded-lg border p-2 text-xs font-medium",
+              done &&
+              "border-border-success-default text-text-success-onlight",
+              error &&
+              "border-border-error-default text-text-error-onlight",
               !done &&
-                !error &&
-                "border-border-default-default text-text-default-onlight",
+              !error &&
+              "border-border-default-default text-text-default-onlight",
             )}
           >
             <Icon
               name={done ? "CheckCircle" : error ? "XCircle" : "Sparkle"}
               className={cn(
-                !done && !error && "animate-spin motion-reduce:animate-none",
+                "mt-0.5 shrink-0",
+                !done &&
+                !error &&
+                "animate-spin motion-reduce:animate-none",
               )}
             />
-            <span className="truncate">{step.label}</span>
+
+            <span className="min-w-0 line-clamp-2 whitespace-normal break-all leading-4">
+              {step.label}
+            </span>
+
             {(done || error) && step.ms != null && (
-              <span className="ml-auto text-[8px] text-text-default-onlight">
+              <span className="shrink-0 whitespace-nowrap text-[8px] leading-4 text-text-default-onlight">
                 {formatDuration(step.ms)}
               </span>
             )}

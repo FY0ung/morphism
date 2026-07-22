@@ -132,6 +132,7 @@
       "error": "ไม่สามารถโหลดข้อมูลพื้นที่น้ำท่วมได้ในขณะนี้",
       "emptyDate": "ไม่พบข้อมูลพื้นที่น้ำท่วมวันที่ {{date}}",
       "emptyMonth": "ไม่พบข้อมูลพื้นที่น้ำท่วมเดือน {{month}}",
+      "emptyRange": "ไม่พบข้อมูลพื้นที่น้ำท่วมในช่วง {{range}}",
       "loadingMap": "กำลังโหลดแผนที่น้ำท่วม…"
     },
     "scenario": {
@@ -239,8 +240,12 @@
         "periodMid": "กลางเดือน",
         "periodLate": "ปลายเดือน",
         "searchingPeriod": "กำลังค้นหาข้อมูลพื้นที่น้ำท่วมช่วง{{period}}{{month}}…",
+        "stepResolvePeriod": "resolve_period('{{period}}{{month}}') → {{range}}",
+        "stepSelectSnapshot": "select_latest_available_snapshot({{range}}) → {{date}}",
+        "stepSelectSnapshotEmpty": "select_latest_available_snapshot({{range}})",
+        "emptyPeriod": "ไม่พบข้อมูลพื้นที่น้ำท่วมช่วง{{period}}{{month}} ({{range}}) ในระบบขณะนี้",
         "foundPeriodLine1": "พบข้อมูลพื้นที่น้ำท่วมช่วง{{period}}{{month}} ({{range}})",
-        "periodSnapshot": "แสดงภาพสถานการณ์ล่าสุดในช่วงนี้: {{date}}"
+        "periodSnapshot": "แสดงภาพสถานการณ์ล่าสุดที่มีในช่วงนี้: {{date}}"
       },
       "unknown": "ยังไม่เข้าใจคำถามนี้ ลองถามเกี่ยวกับโรงพยาบาล น้ำท่วม หรือพื้นที่ที่ต้องการดูบนแผนที่อีกครั้งครับ"
     },

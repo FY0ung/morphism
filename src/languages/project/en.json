@@ -132,6 +132,7 @@
       "error": "Couldn't load flood areas right now",
       "emptyDate": "No flood data for {{date}}",
       "emptyMonth": "No flood data for {{month}}",
+      "emptyRange": "No flood data between {{range}}",
       "loadingMap": "Loading flood map…"
     },
     "scenario": {
@@ -239,8 +240,12 @@
         "periodMid": "mid-",
         "periodLate": "late ",
         "searchingPeriod": "Searching for flood-area data for {{period}}{{month}}…",
+        "stepResolvePeriod": "resolve_period('{{period}}{{month}}') → {{range}}",
+        "stepSelectSnapshot": "select_latest_available_snapshot({{range}}) → {{date}}",
+        "stepSelectSnapshotEmpty": "select_latest_available_snapshot({{range}})",
+        "emptyPeriod": "No flood-area data for {{period}}{{month}} ({{range}}) in the system.",
         "foundPeriodLine1": "Found flood-area data for {{period}}{{month}} ({{range}}).",
-        "periodSnapshot": "Showing the latest snapshot in this range: {{date}}."
+        "periodSnapshot": "Showing the latest available snapshot in this range: {{date}}."
       },
       "unknown": "I didn't quite understand that. Try asking about hospitals, flooding, or an area you'd like to see on the map."
     },

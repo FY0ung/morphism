@@ -14,6 +14,7 @@ import { run as lru } from "./lru.test";
 import { run as settings } from "./settings.test";
 import { run as dataPalette } from "./data-palette.test";
 import { run as scenarioResolution } from "./scenario-resolution.test";
+import { run as floodPeriod } from "./flood-period.test";
 import { run as japaneseIntent } from "./japanese-intent.test";
 import { run as i18n } from "./i18n.test";
 
@@ -28,6 +29,7 @@ const suites: [string, () => void | Promise<void>][] = [
   ["settings", settings],
   ["data-palette", dataPalette],
   ["scenario-resolution", scenarioResolution],
+  ["flood-period", floodPeriod],
   ["japanese-intent", japaneseIntent],
   ["i18n", i18n],
 ];

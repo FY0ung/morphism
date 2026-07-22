@@ -34,6 +34,7 @@ import {
   resolveFloodDate,
   detectFloodMonth,
   detectMonthPeriod,
+  periodCalendarRange,
   periodDayRange,
   formatDate,
   formatMonth,
@@ -862,30 +863,86 @@ const PERIOD_LABEL_KEY: Record<MonthPeriod, string> = {
 };
 
 /**
- * "ต้น/กลาง/ปลายเดือน" → a DATE RANGE. Finds every snapshot inside the period's
- * day window for `monthKey`, displays the newest one, and reports the span
- * (from…to) to the user. Returns null when the window has no data (caller then
- * falls back to plain month handling).
+ * "ต้น/กลาง/ปลายเดือน" → TRANSPARENT two-step resolution. The pipeline is:
+ *
+ *   1. resolve_period          — the natural-language period resolves to its
+ *      CALENDAR day window (early = 1–10, mid = 11–20, late = 21–end of
+ *      month). Deterministic; independent of the dataset registry.
+ *   2. select_latest_available_snapshot — the newest REGISTERED snapshot
+ *      whose date lies INSIDE that window. A window with no registered
+ *      snapshot is an explicit empty state — never a silent fallback to a
+ *      date outside the range.
+ *
+ * The chat steps, the user-facing result and the map all read the SAME
+ * runtime resolution (one range + one selected date — never recomputed).
  */
 function scnFloodByPeriod(
   monthKey: string,
   period: MonthPeriod,
   t: TFunction,
   lang: Lang,
-): Scenario | null {
+): Scenario {
   const [lo, hi] = periodDayRange(period);
+  const [periodStart, periodEnd] = periodCalendarRange(monthKey, period);
   const inWindow = snapshotsInWindow(monthKey, lo, hi);
-  if (!inWindow.length) return null;
 
-  const from = inWindow[0];
-  const to = inWindow.at(-1)!;
-  const date = to; // display the newest snapshot within the window
   const periodWord = t(PERIOD_LABEL_KEY[period] as "morphism.scenario.flood.periodMid");
   const monthLabel = formatMonth(monthKey, lang); // "ตุลาคม 2568" / "October 2025"
-  const rangeLabel =
-    from === to
-      ? formatDate(to, lang)
-      : `${formatDate(from, lang)} – ${formatDate(to, lang)}`;
+  // The RESOLVED period range (locale-formatted calendar window) — the one
+  // range shown in resolve_period, the selection step AND the result text.
+  const rangeLabel = `${formatDate(periodStart, lang)} – ${formatDate(periodEnd, lang)}`;
+  const resolveStep: ScenarioStep = {
+    label: t("morphism.scenario.flood.stepResolvePeriod", {
+      period: periodWord,
+      month: monthLabel,
+      range: rangeLabel,
+    }),
+    wait: 300,
+  };
+  const interim = t("morphism.scenario.flood.searchingPeriod", {
+    period: periodWord,
+    month: monthLabel,
+  });
+
+  // No registered snapshot INSIDE the resolved window → truthful empty state.
+  // (Previously this silently fell back to the month's snapshot even when it
+  // was outside the queried range.) The selection step is the one that FAILS.
+  if (!inWindow.length) {
+    const meta: FloodScenarioMeta = {
+      scenarioId: `flood-empty-${monthKey}-${period}`,
+      date: periodEnd, // never fetched — hasData is false
+      matchMode: "month",
+      queriedMonth: monthKey,
+      dateLabel: rangeLabel,
+      hasData: false,
+      periodStart,
+      periodEnd,
+    };
+    return {
+      id: meta.scenarioId,
+      mode: "analysis",
+      layers: [], // nothing to render
+      flood: meta,
+      interim,
+      steps: [
+        resolveStep,
+        {
+          label: t("morphism.scenario.flood.stepSelectSnapshotEmpty", {
+            range: rangeLabel,
+          }),
+          wait: 300,
+        },
+      ],
+      result: t("morphism.scenario.flood.emptyPeriod", {
+        period: periodWord,
+        month: monthLabel,
+        range: rangeLabel,
+      }),
+    };
+  }
+
+  // Latest registered snapshot INSIDE the range (selection rule unchanged).
+  const date = inWindow.at(-1)!;
   const snapLabel = formatDate(date, lang);
 
   const meta: FloodScenarioMeta = {
@@ -895,6 +952,8 @@ function scnFloodByPeriod(
     queriedMonth: monthKey,
     dateLabel: snapLabel,
     hasData: true,
+    periodStart,
+    periodEnd,
   };
   return {
     id: meta.scenarioId,
@@ -903,11 +962,20 @@ function scnFloodByPeriod(
     flood: meta,
     timeActive: true,
     timeLabel: rangeLabel,
-    interim: t("morphism.scenario.flood.searchingPeriod", {
-      period: periodWord,
-      month: monthLabel,
-    }),
-    steps: floodSteps(date, true, `${periodWord}${monthLabel}`, t),
+    interim,
+    steps: [
+      resolveStep,
+      {
+        label: t("morphism.scenario.flood.stepSelectSnapshot", {
+          range: rangeLabel,
+          date: snapLabel,
+        }),
+        wait: 300,
+      },
+      { label: t("morphism.scenario.flood.stepLoad", { date }), wait: 900 },
+      { label: t("morphism.scenario.flood.stepAddLayer"), wait: 320 },
+      { label: t("morphism.scenario.flood.stepFit"), wait: 300 },
+    ],
     result: [
       t("morphism.scenario.flood.foundPeriodLine1", {
         period: periodWord,
@@ -1164,9 +1232,11 @@ export function resolveScenario(
   if (has(q, ...FLOOD_TERMS)) {
     const floodDate = resolveFloodDate(raw);
 
-    // "ต้น/กลาง/ปลายเดือน" → a DATE RANGE within the month (e.g. mid-October =
+    // "ต้น/กลาง/ปลายเดือน" → a CALENDAR RANGE within the month (mid-October =
     // 11–20). Resolve the target month from an explicit date/month if present,
-    // else the newest year that has that month's data, then show the range.
+    // else the newest year that has that month's data. The period scenario is
+    // ALWAYS final: a window with no registered snapshot shows a truthful
+    // empty state — it never falls back to a snapshot outside the range.
     const period = detectMonthPeriod(raw);
     if (period) {
       let monthKey: string | undefined;
@@ -1178,10 +1248,7 @@ export function resolveScenario(
         const m = detectFloodMonth(raw);
         if (m != null) monthKey = latestMonthKey(m);
       }
-      if (monthKey) {
-        const periodScn = scnFloodByPeriod(monthKey, period, t, lang);
-        if (periodScn) return periodScn;
-      }
+      if (monthKey) return scnFloodByPeriod(monthKey, period, t, lang);
     }
 
     if (floodDate.matchMode !== "none")

@@ -24,6 +24,7 @@ import {
 } from "@/lib/api";
 import { ApiError } from "@/lib/api/client";
 import { floodPmtilesEnabled, floodPmtilesUrl } from "@/configs/flood-data";
+import { floodDatasetAvailable } from "@/configs/flood-datasets";
 import { endpoint } from "@/configs/endpoint";
 import { CAMERA } from "@/configs/motion";
 import { DEFAULT_COLOR_VISION, selectColorVision } from "@/configs/settings";
@@ -489,10 +490,26 @@ const MorphismView = () => {
     ): Promise<ScenarioOutcome> => {
       const emptyMsg = `ไม่พบข้อมูลพื้นที่น้ำท่วมวันที่ ${meta.dateLabel} ในระบบขณะนี้`;
       const errorMsg = "ไม่สามารถโหลดข้อมูลพื้นที่น้ำท่วมได้ในขณะนี้";
+      // Period queries ("early/mid/late <month>") run the transparent two-step
+      // resolution (resolve_period → select_latest_available_snapshot), which
+      // prepends one step — every map step index shifts by this offset.
+      const isPeriod = Boolean(meta.periodStart && meta.periodEnd);
+      const o = isPeriod ? 1 : 0;
 
-      // Empty resolution (unknown date/month) → no dataset for this date.
+      // Empty resolution (unknown date/month, or a period window with no
+      // registered snapshot) → no dataset to load.
       if (!meta.hasData) {
         setFloodStatus("empty");
+        if (isPeriod) {
+          // resolve_period DID succeed — the SELECTION found no registered
+          // snapshot inside the resolved range, so that is the failing step.
+          // Both durations are the real (sub-ms) parse-time cost — never the
+          // nominal step waits. No message: the baked scenario result already
+          // carries the localized empty-period text from the SAME range.
+          report?.done(0, 0);
+          report?.fail(1, 0);
+          return { ok: false };
+        }
         report?.fail(1);
         return { ok: false, message: emptyMsg };
       }
@@ -503,8 +520,22 @@ const MorphismView = () => {
         controller.signal.aborted || requestId !== floodRequestIdRef.current;
       const since = (t0: number) => Math.round(performance.now() - t0);
 
-      // Step 0 · resolve_date — already parsed during query resolution (instant).
+      // Step 0 · resolve_date / resolve_period — already parsed during query
+      // resolution (instant).
       report?.done(0, since(performance.now()));
+
+      // Step 1 (period only) · select_latest_available_snapshot — completes
+      // ONLY after the selected dataset key is validated against the flood
+      // registry (measured; never marked done on an unregistered key).
+      if (isPeriod) {
+        const tSelect = performance.now();
+        if (!floodDatasetAvailable(meta.date)) {
+          report?.fail(1, since(tSelect));
+          setFloodStatus("empty");
+          return { ok: false, message: emptyMsg };
+        }
+        report?.done(1, since(tSelect));
+      }
 
       // Clear a stale empty/error badge WITHOUT clearing the existing layer.
       setFloodStatus("loading-data");
@@ -534,8 +565,8 @@ const MorphismView = () => {
               setFloodPartial(false);
               applyExact(["flood"]);
               commitFloodTiles(floodPmtilesUrl(meta.date));
-              report?.done(1, since(tLoad));
-              report?.done(2, since(tLoad));
+              report?.done(1 + o, since(tLoad));
+              report?.done(2 + o, since(tLoad));
 
               setFloodStatus("moving-camera");
               const tCam = performance.now();
@@ -550,7 +581,7 @@ const MorphismView = () => {
                 });
               }
               if (stale()) return { ok: true };
-              report?.done(3, since(tCam));
+              report?.done(3 + o, since(tCam));
               setFloodStatus("complete");
               showToast(t("morphism.toast.applied"));
               return { ok: true };
@@ -586,8 +617,8 @@ const MorphismView = () => {
             setFloodStatus("updating-map");
             setFloodOverview(overview);
             applyExact(["flood"]);
-            report?.done(1, since(tLoad));
-            report?.done(2, since(tLoad));
+            report?.done(1 + o, since(tLoad));
+            report?.done(2 + o, since(tLoad));
           } else {
             overview = null;
           }
@@ -602,7 +633,7 @@ const MorphismView = () => {
         // chat shows the empty message; the previous valid map is kept.
         const bb = resp.features.length ? bboxOf(resp) : null;
         if (!resp.features.length || !bb) {
-          report?.fail(overview ? 3 : 1, since(tLoad));
+          report?.fail((overview ? 3 : 1) + o, since(tLoad));
           setFloodStatus("empty");
           if (overview) setFloodOverview(null); // roll back the optimistic hexes
           return { ok: false, message: emptyMsg };
@@ -610,10 +641,10 @@ const MorphismView = () => {
 
         if (!overview) {
           // No CDN overview → derive the hex LODs from the actual geometry.
-          report?.done(1, since(tLoad));
+          report?.done(1 + o, since(tLoad));
           setFloodStatus("updating-map");
           setFloodOverview(buildFloodHexLevels(resp));
-          report?.done(2, since(tLoad));
+          report?.done(2 + o, since(tLoad));
         }
 
         // Commit the detailed geometry (renders at zoom ≥ FLOOD_DETAIL_MIN_ZOOM).
@@ -636,7 +667,7 @@ const MorphismView = () => {
           });
         }
         if (stale()) return { ok: true };
-        report?.done(3, since(tCam));
+        report?.done(3 + o, since(tCam));
 
         // ── complete: the flood layer is visible + framed with real data. ───
         setFloodStatus("complete");
@@ -644,7 +675,7 @@ const MorphismView = () => {
         return { ok: true };
       } catch {
         if (stale()) return { ok: true };
-        report?.fail(1);
+        report?.fail(1 + o);
         setFloodStatus("error"); // keep previous valid map state
         return { ok: false, message: errorMsg };
       }
@@ -1420,9 +1451,13 @@ const MorphismView = () => {
           >
             {floodStatus === "error"
               ? t("morphism.flood.error")
-              : floodMeta?.matchMode === "month"
-                ? t("morphism.flood.emptyMonth", { month: floodMeta.dateLabel })
-                : t("morphism.flood.emptyDate", { date: floodMeta?.dateLabel ?? "" })}
+              : floodMeta?.periodStart
+                ? // Period query: the badge states the RESOLVED range (the
+                  // same runtime range the steps + chat show), not "month".
+                  t("morphism.flood.emptyRange", { range: floodMeta.dateLabel })
+                : floodMeta?.matchMode === "month"
+                  ? t("morphism.flood.emptyMonth", { month: floodMeta.dateLabel })
+                  : t("morphism.flood.emptyDate", { date: floodMeta?.dateLabel ?? "" })}
           </div>
         )}
 

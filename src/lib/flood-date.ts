@@ -142,6 +142,32 @@ export function periodDayRange(period: MonthPeriod): [number, number] {
   return [21, 31];
 }
 
+/** Number of days in "YYYY-MM" (day 0 of the NEXT month = last day of this
+ *  one — pure calendar arithmetic, no timezone dependence on the result). */
+export function daysInMonth(monthKey: string): number {
+  const [y, m] = monthKey.split("-").map(Number);
+  return new Date(y, m, 0).getDate();
+}
+
+/**
+ * CALENDAR window of a month-period as inclusive ISO dates, e.g.
+ * ("2025-10", "mid") → ["2025-10-11", "2025-10-20"]. The upper bound is
+ * clamped to the month's real length ("2025-02" late → …-02-28), so the
+ * resolved range is always a pair of real calendar dates. Deterministic:
+ * depends ONLY on the inputs — never on the dataset registry or today's date.
+ */
+export function periodCalendarRange(
+  monthKey: string,
+  period: MonthPeriod,
+): [string, string] {
+  const [lo, hi] = periodDayRange(period);
+  const last = daysInMonth(monthKey);
+  return [
+    `${monthKey}-${pad2(lo)}`,
+    `${monthKey}-${pad2(Math.min(hi, last))}`,
+  ];
+}
+
 /**
  * Resolve a free-text query (Thai or Gregorian) to a flood observation date or
  * month. Returns matchMode "none" when no month+year could be extracted.

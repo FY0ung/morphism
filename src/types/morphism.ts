@@ -171,6 +171,17 @@ export interface FloodScenarioMeta {
   dateLabel: string;
   /** False when the query resolved to a date/month with no dataset. */
   hasData: boolean;
+  /**
+   * Resolved CALENDAR window of a natural-language period query
+   * ("early/mid/late <month>") — inclusive ISO start/end, e.g. mid-October
+   * 2025 → "2025-10-11" / "2025-10-20". Presence switches the tool steps to
+   * the transparent two-step pipeline (resolve_period →
+   * select_latest_available_snapshot), shifting the map steps by one; `date`
+   * is then guaranteed to lie INSIDE this window (never a silent fallback).
+   */
+  periodStart?: string;
+  /** Inclusive ISO end of the resolved period window (see `periodStart`). */
+  periodEnd?: string;
 }
 
 /** หนึ่งขั้นตอนเครื่องมือ: ป้าย + เวลาที่ใช้ (ms) ก่อนไปขั้นถัดไป */
