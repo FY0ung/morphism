@@ -3,6 +3,7 @@ export { useUsers } from "./use-users";
 export { useHistoryStack } from "./use-history-stack";
 export { useMapLayers } from "./use-map-layers";
 export { useChatResizer } from "./use-chat-resizer";
+export { useBottomSheet } from "./use-bottom-sheet";
 export { useAiAssistant } from "./use-ai-assistant";
 export { useMorphismMap } from "./use-morphism-map";
 export type { FloodCompareData } from "./use-morphism-map";

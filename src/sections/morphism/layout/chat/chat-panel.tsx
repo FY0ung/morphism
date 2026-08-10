@@ -17,6 +17,9 @@ interface Props {
   activeSwipe?: SwipeCompare | null;
   /** Layout sizing classes supplied by the shell (width / order / borders). */
   className?: string;
+  /** MOBILE bottom sheet: dragging the header also moves the sheet (no-op on
+   *  desktop, where the sheet wrapper is inert). */
+  onHeaderPointerDown?: (e: React.PointerEvent) => void;
 }
 
 /** The whole chat sidebar (header → transcript → chips → input). */
@@ -27,6 +30,7 @@ export default function ChatPanel({
   onReopenCompare,
   activeSwipe,
   className,
+  onHeaderPointerDown,
 }: Props) {
   const { t } = useTranslation();
 
@@ -38,7 +42,10 @@ export default function ChatPanel({
       )}
       aria-label={t("morphism.chatAria")}
     >
-      <header className="flex items-center gap-2 border-b border-border-default-default px-4 py-3">
+      <header
+        onPointerDown={onHeaderPointerDown}
+        className="flex flex-none touch-pan-y items-center gap-2 border-b border-border-default-default px-4 py-3 md:touch-auto"
+      >
         {/* Product identity in the header. Reuses the same avatar asset +
             typography as the message identity row. The avatar carries the
             accessible label ("Morphism"); the visible name is a decorative echo
@@ -62,6 +69,7 @@ export default function ChatPanel({
         messages={messages}
         onReopenCompare={onReopenCompare}
         activeSwipe={activeSwipe}
+        onPullDown={onHeaderPointerDown}
       />
       <SuggestionChips onPick={onSend} disabled={pending} />
       <ChatInput onSend={onSend} disabled={pending} />

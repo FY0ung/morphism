@@ -14,7 +14,9 @@ export default function SuggestionChips({ onPick, disabled }: Props) {
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-col gap-2 border-t border-border-default-default p-4">
+    // MOBILE: hidden entirely (`hidden`) — `display:none` leaves no residual
+    // spacing inside the bottom sheet. Desktop (`md:` and up) is unchanged.
+    <div className="hidden flex-col gap-2 border-t border-border-default-default p-4 md:flex">
       <p className="text-xs font-medium text-text-default-onlight">
         {t("morphism.suggestLabel")}
       </p>

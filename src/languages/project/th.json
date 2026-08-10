@@ -6,6 +6,10 @@
     "assistantName": "Morphism",
     "chatHeader": "AI Assistant",
     "chatAria": "แชทกับผู้ช่วย AI",
+    "sheet": {
+      "aria": "แผงผู้ช่วย AI",
+      "handle": "ปรับขนาดแผงผู้ช่วย"
+    },
     "greeting": "สวัสดีครับ ผมช่วยคุณสำรวจข้อมูลแผนที่ได้ด้วยภาษาธรรมดา ลองพิมพ์สิ่งที่อยากรู้ หรือกดตัวอย่างด้านล่างได้เลย",
     "inputPlaceholder": "ถามอะไรก็ได้เกี่ยวกับแผนที่…",
     "send": "ส่งคำถาม",
@@ -218,7 +222,7 @@
         "increase": "เพิ่มขึ้น",
         "decrease": "ลดลง",
         "chartAreaTitle": "พื้นที่น้ำท่วมรายปี — {{yearLabelA}} vs {{yearLabelB}}",
-        "chartAreaCenter": "ไร่ (รวม)"
+        "chartUnit": "ไร่"
       },
       "flood": {
         "searching": "กำลังค้นหาข้อมูลพื้นที่น้ำท่วม…",

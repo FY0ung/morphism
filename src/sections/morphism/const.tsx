@@ -695,14 +695,19 @@ export function buildFloodCompareOutcome(
     }),
   ].join("\n");
 
+  // HORIZONTAL BAR (never a donut): the two flooded areas are INDEPENDENT
+  // absolute magnitudes, not parts of one whole — so no percentage-of-total and
+  // no combined-total centre value. Bars share one scale (max = largest value),
+  // so length is directly comparable. Colours stay on the centralized
+  // data-palette vars (default ↔ viridis) via FLOOD_COMPARE_SIDES.
   const charts: ChartData[] = [
     {
-      kind: "donut",
+      kind: "bar",
       title: t("morphism.scenario.floodCompare.chartAreaTitle", {
         yearLabelA: labelA,
         yearLabelB: labelB,
       }),
-      centerLabel: t("morphism.scenario.floodCompare.chartAreaCenter"),
+      unit: t("morphism.scenario.floodCompare.chartUnit"),
       rows: [
         { label: labelA, value: raiA, swatch: FLOOD_COMPARE_SIDES.a.fill },
         { label: labelB, value: raiB, swatch: FLOOD_COMPARE_SIDES.b.fill },

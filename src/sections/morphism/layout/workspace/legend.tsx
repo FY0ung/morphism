@@ -4,6 +4,10 @@ import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { LAYER_META } from "../../const";
 import { FLOOD_COMPARE_SIDES } from "@/configs/flood-compare";
+import {
+  MAP_CHROME_BOTTOM_CLASS,
+  MAP_CHROME_TRANSITION_CLASS,
+} from "@/configs/mobile-sheet";
 import type { AdminBoundaryLevel } from "@/hooks";
 import type { LayersState, ProvinceCount, SwipeCompare } from "@/types";
 
@@ -38,6 +42,9 @@ interface Props {
   /** Active 5 km flood-proximity analysis (real server-side result): the
    *  RESOLVED snapshot date label + whether that snapshot is partial. */
   floodBuffer?: { dateLabel: string; partial: boolean } | null;
+  /** MOBILE: true while the bottom sheet is being dragged — the offset then
+   *  tracks the sheet every frame instead of easing (desktop: always false). */
+  sheetDragging?: boolean;
 }
 
 /**
@@ -56,13 +63,23 @@ export default function Legend({
   floodDateLabel,
   floodPartial,
   floodBuffer,
+  sheetDragging,
 }: Props) {
   const { t } = useTranslation();
   const visible = LAYER_META.filter((m) => layers[m.id].visible);
   const isAggregate = Boolean(aggregate && aggregate.length);
 
   return (
-    <div className="absolute bottom-4 left-4 z-50 min-w-47 rounded-2xl border border-border-default-default bg-background-default-default px-4 py-3 shadow-lg">
+    <div
+      className={cn(
+        // MOBILE: rides above the bottom sheet (shared --mobile-sheet-h).
+        // DESKTOP: unchanged `bottom-4`. Width is capped on mobile so it can
+        // never run under the right-hand controls; contents/styling untouched.
+        "absolute left-4 z-50 min-w-47 max-w-[min(60vw,theme(spacing.80))] rounded-2xl border border-border-default-default bg-background-default-default px-4 py-3 shadow-lg md:max-w-none",
+        MAP_CHROME_BOTTOM_CLASS,
+        !sheetDragging && MAP_CHROME_TRANSITION_CLASS,
+      )}
+    >
       <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-default-onlight">
         {t("morphism.legendTitle")}
       </h4>

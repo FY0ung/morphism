@@ -62,6 +62,23 @@ export default function ChartCard({ chart }: Props) {
   const title = t(chart.title as "morphism.chartCompareTitle");
 
   const isDonut = chart.kind === "donut";
+
+  // Charts with a unit compare INDEPENDENT absolute magnitudes (e.g. flooded
+  // area A vs B, millions of rai). They use a full-width horizontal bar per row
+  // — label above-left, exact value above-right, bar underneath — so long
+  // TH/JP labels and 7-digit values never overlap or clip in the narrow chat
+  // panel. No percentages, no combined total: bars share ONE scale (max =
+  // largest value), which is what makes the lengths directly comparable.
+  const isWideBar = !isDonut && Boolean(chart.unit);
+  const unitSuffix = chart.unit ? ` ${chart.unit}` : "";
+  const fmt = (v: number) => `${v.toLocaleString()}${unitSuffix}`;
+  const WIDE_ROW_H = 44;
+  const WIDE_BAR_H = 14;
+  const wideHeight = chart.rows.length * WIDE_ROW_H;
+  // "Flooded area comparison: 2565 — 3,824,248 rai; 2568 — 2,713,219 rai."
+  const description = `${title}: ${chart.rows
+    .map((r) => `${r.label} — ${fmt(r.value)}`)
+    .join("; ")}`;
   const donutTotal = chart.rows.reduce((s, r) => s + r.value, 0);
   const dCx = 82;
   const dCy = 95;
@@ -213,6 +230,64 @@ export default function ChartCard({ chart }: Props) {
             );
           })}
         </svg>
+      ) : isWideBar ? (
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${width} ${wideHeight}`}
+          width="100%"
+          role="img"
+          aria-label={description}
+          className="overflow-visible"
+        >
+          {chart.rows.map((row, i) => {
+            const y = i * WIDE_ROW_H;
+            const barY = y + 20;
+            // Shared scale across rows → a larger value ALWAYS draws a longer
+            // bar. Min 2px so a non-zero value stays visible.
+            const w = row.value > 0 ? Math.max(2, (row.value / max) * width) : 0;
+            return (
+              <g key={row.label}>
+                {/* period / year label */}
+                <text
+                  x={0}
+                  y={y + 8}
+                  dominantBaseline="central"
+                  className="fill-text-default-onlight text-[12px]"
+                >
+                  {row.label}
+                </text>
+                {/* exact value + localized unit, right-aligned (never clipped) */}
+                <text
+                  x={width}
+                  y={y + 8}
+                  textAnchor="end"
+                  dominantBaseline="central"
+                  className="fill-text-default-default text-[12px] font-semibold"
+                >
+                  {fmt(row.value)}
+                </text>
+                {/* subtle shared-scale track (no grid lines / borders) */}
+                <rect
+                  x={0}
+                  y={barY}
+                  width={width}
+                  height={WIDE_BAR_H}
+                  rx={WIDE_BAR_H / 2}
+                  className="fill-background-default-light"
+                />
+                {/* value bar — colour comes from the centralized data palette */}
+                <rect
+                  x={0}
+                  y={barY}
+                  width={w}
+                  height={WIDE_BAR_H}
+                  rx={WIDE_BAR_H / 2}
+                  className={row.swatch ?? "fill-data-series-1"}
+                />
+              </g>
+            );
+          })}
+        </svg>
       ) : (
         <svg
           ref={svgRef}
@@ -270,14 +345,15 @@ export default function ChartCard({ chart }: Props) {
         </svg>
       )}
 
-      {/* screen-reader data table */}
+      {/* screen-reader data table — exact values (with unit), never colour or
+          bar length alone. */}
       <table className="sr-only">
-        <caption>{title}</caption>
+        <caption>{description}</caption>
         <tbody>
           {chart.rows.map((r) => (
             <tr key={r.label}>
               <th scope="row">{r.label}</th>
-              <td>{r.value}</td>
+              <td>{chart.unit ? fmt(r.value) : r.value}</td>
             </tr>
           ))}
         </tbody>

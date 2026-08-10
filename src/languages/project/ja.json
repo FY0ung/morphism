@@ -6,6 +6,10 @@
     "assistantName": "Morphism",
     "chatHeader": "AIアシスタント",
     "chatAria": "AIアシスタントとのチャット",
+    "sheet": {
+      "aria": "AIアシスタントパネル",
+      "handle": "アシスタントパネルの高さを変更"
+    },
     "greeting": "こんにちは！地図データを日常の言葉で調べるお手伝いをします。知りたいことを入力するか、下の例をタップしてください。",
     "inputPlaceholder": "地図について何でも質問してください…",
     "send": "質問を送信",
@@ -218,7 +222,7 @@
         "increase": "増加 ",
         "decrease": "減少 ",
         "chartAreaTitle": "年別の浸水面積 — {{yearLabelA}} vs {{yearLabelB}}",
-        "chartAreaCenter": "ライ（合計）"
+        "chartUnit": "ライ"
       },
       "flood": {
         "searching": "洪水地域データを検索中…",

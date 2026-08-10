@@ -2,6 +2,7 @@
 export { default as ChatPanel } from "./chat/chat-panel";
 export { default as Resizer } from "./resizer";
 export { default as MapCanvas } from "./workspace/map-canvas";
+export { default as MobileSheet } from "./chat/mobile-sheet";
 export { default as MapLoadingOverlay } from "./workspace/map-loading-overlay";
 export { default as MapTopBar } from "./workspace/map-top-bar";
 export { default as LayerFab } from "./workspace/layer-fab";

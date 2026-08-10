@@ -7,6 +7,7 @@ import {
   useAdminBoundaries,
   useAdminHierarchy,
   useAiAssistant,
+  useBottomSheet,
   useChatResizer,
   useFloodComparison,
   useMapLayers,
@@ -28,6 +29,10 @@ import { floodDatasetAvailable } from "@/configs/flood-datasets";
 import { endpoint } from "@/configs/endpoint";
 import { CAMERA } from "@/configs/motion";
 import { DEFAULT_COLOR_VISION, selectColorVision } from "@/configs/settings";
+import {
+  MAP_CHROME_BOTTOM_CLASS,
+  MAP_CHROME_TRANSITION_CLASS,
+} from "@/configs/mobile-sheet";
 import { applyColorVisionMode, resolveAdminAreaColor } from "@/lib/data-palette";
 import { cn, localStorageGetItem, localStorageSetItem } from "@/lib/utils";
 import type {
@@ -75,6 +80,7 @@ import {
   MapCanvas,
   MapLoadingOverlay,
   MapTopBar,
+  MobileSheet,
   Resizer,
   SettingsPopover,
   SwipeCompare,
@@ -235,6 +241,10 @@ const MorphismView = () => {
   } = useMapLayers();
 
   const { width, active, onPointerDown, onKeyDown, rootRef } = useChatResizer(direction);
+  // MOBILE ONLY: bottom-sheet drag/snap state. `enabled` is false at/above the
+  // `md` breakpoint, so desktop keeps the resizer-driven column untouched (the
+  // two never share state — desktop width persistence is unaffected).
+  const sheet = useBottomSheet();
   // Layer data for the map. The flood layer carries ONLY real processed data
   // (never mock geometry — no data means an empty layer), and the manual
   // administrative-boundaries layer is fed separately by useAdminBoundaries.
@@ -1274,18 +1284,35 @@ const MorphismView = () => {
       )}
       style={{ ["--chat-w" as string]: `${width}px` } as React.CSSProperties}
     >
-      {/* Chat sidebar: fixed ~400px on desktop, stacked panel on mobile */}
-      <ChatPanel
-        messages={messages}
-        pending={pending}
-        onSend={ask}
-        onReopenCompare={reopenCompare}
-        activeSwipe={swipe}
-        className={cn(
-          "order-2 w-full shrink-0 basis-[46%] border-t border-border-default-default",
-          "md:order-0 md:w-auto md:grow-0 md:basis-(--chat-w,400px) md:border-t-0 md:border-x",
-        )}
-      />
+      {/* Chat: fixed ~400px column on desktop (unchanged), draggable bottom
+          sheet over the map on mobile. MobileSheet is `md:contents`, so on
+          desktop ChatPanel stays the exact same flex item it has always been. */}
+      <MobileSheet
+        enabled={sheet.enabled}
+        snap={sheet.snap}
+        dragging={sheet.dragging}
+        sheetRef={sheet.sheetRef}
+        onDragStart={sheet.onDragStart}
+        onCycle={sheet.cycleSnap}
+        onStep={sheet.stepBy}
+        keyboardInset={sheet.keyboardInset}
+      >
+        <ChatPanel
+          messages={messages}
+          pending={pending}
+          onSend={ask}
+          onReopenCompare={reopenCompare}
+          activeSwipe={swipe}
+          onHeaderPointerDown={sheet.onDragStart}
+          className={cn(
+            // Mobile: fills the sheet below the drag handle.
+            "min-h-0 w-full flex-1",
+            // Desktop: identical computed box to before — grow 0, shrink 0,
+            // basis = the resizer's --chat-w (400px default).
+            "md:order-0 md:w-auto md:shrink-0 md:grow-0 md:basis-(--chat-w,400px) md:border-t-0 md:border-x md:border-border-default-default",
+          )}
+        />
+      </MobileSheet>
 
       <Resizer active={active} onPointerDown={onPointerDown} onKeyDown={onKeyDown} />
 
@@ -1334,7 +1361,16 @@ const MorphismView = () => {
             setTimeLabel(null);
           }}
         />
-        <div className="flex flex-col max-h-full justify-between items-end absolute right-4 top-4 bottom-4 z-50">
+        {/* Right-hand map chrome. MOBILE: its bottom edge rides above the
+            bottom sheet via the SHARED --mobile-sheet-h (settings + AI-sees
+            never sit under the sheet). DESKTOP: unchanged `bottom-4`. */}
+        <div
+          className={cn(
+            "flex flex-col max-h-full justify-between items-end absolute right-4 top-4 z-50",
+            MAP_CHROME_BOTTOM_CLASS,
+            !sheet.dragging && MAP_CHROME_TRANSITION_CLASS,
+          )}
+        >
           <div className="flex flex-col gap-4">
             <LayerFab
               open={layerPanelOpen}
@@ -1413,6 +1449,7 @@ const MorphismView = () => {
             }
             floodPartial={floodPartial}
             floodBuffer={bufferAnalysis}
+            sheetDragging={sheet.dragging}
           />
 
         {/* Lazy ADM2/ADM3 status — loading / error(fallback) / empty */}

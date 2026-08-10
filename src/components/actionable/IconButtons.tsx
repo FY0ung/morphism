@@ -19,12 +19,20 @@ export interface IconButtonProps
   color?: IconButtonColor;
   variant?: IconButtonVariant;
   size?: "large" | "medium" | "small";
+  /**
+   * Opt-in escape hatch for RESPONSIVE sizing (e.g. "size-8 md:size-10").
+   * When set it REPLACES the `size` preset's width/height classes — the preset
+   * ships them as `!important`, which no utility passed through `className`
+   * can override. Omit it and behaviour is exactly as before.
+   */
+  sizeClassName?: string;
 }
 
 export const IconButton: React.FC<IconButtonProps> = ({
   color = "primary",
   variant = "filled",
   size = "medium",
+  sizeClassName,
   children,
   className,
   ...rest
@@ -74,11 +82,12 @@ export const IconButton: React.FC<IconButtonProps> = ({
       : filledVariantClassMap[color];
 
   const sizeClass =
-    size === "large"
+    sizeClassName ??
+    (size === "large"
       ? "!w-12 !h-12"
       : size === "small"
         ? "!w-8 !h-8 text-sm"
-        : "!w-10 !h-10"; // medium
+        : "!w-10 !h-10"); // medium
 
   return (
     <button

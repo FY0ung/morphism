@@ -15,6 +15,8 @@ import { run as settings } from "./settings.test";
 import { run as dataPalette } from "./data-palette.test";
 import { run as scenarioResolution } from "./scenario-resolution.test";
 import { run as floodPeriod } from "./flood-period.test";
+import { run as floodCompareChart } from "./flood-compare-chart.test";
+import { run as mobileSheet } from "./mobile-sheet.test";
 import { run as japaneseIntent } from "./japanese-intent.test";
 import { run as i18n } from "./i18n.test";
 
@@ -30,6 +32,8 @@ const suites: [string, () => void | Promise<void>][] = [
   ["data-palette", dataPalette],
   ["scenario-resolution", scenarioResolution],
   ["flood-period", floodPeriod],
+  ["flood-compare-chart", floodCompareChart],
+  ["mobile-sheet", mobileSheet],
   ["japanese-intent", japaneseIntent],
   ["i18n", i18n],
 ];

@@ -6,6 +6,10 @@
     "assistantName": "Morphism",
     "chatHeader": "AI Assistant",
     "chatAria": "Chat with the AI assistant",
+    "sheet": {
+      "aria": "AI assistant panel",
+      "handle": "Resize the assistant panel"
+    },
     "greeting": "Hi! I can help you explore map data in plain language. Type what you'd like to know, or tap one of the examples below.",
     "inputPlaceholder": "Ask anything about the map…",
     "send": "Send question",
@@ -218,7 +222,7 @@
         "increase": "increased",
         "decrease": "decreased",
         "chartAreaTitle": "Flooded area by year — {{yearLabelA}} vs {{yearLabelB}}",
-        "chartAreaCenter": "Rai (total)"
+        "chartUnit": "rai"
       },
       "flood": {
         "searching": "Searching for flood-area data…",

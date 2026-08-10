@@ -37,6 +37,13 @@ export interface ChartData {
   rows: ChartRow[];
   /** คำอธิบายกลางโดนัท (เช่น "ไร่ (รวม)") */
   centerLabel?: string;
+  /**
+   * Localised unit appended to every value (e.g. "rai" / "ไร่" / "ライ").
+   * Charts that compare INDEPENDENT absolute magnitudes (flood area A vs B) set
+   * this; it also selects the wide horizontal-bar layout (label above the bar,
+   * full value at the row end) so millions-scale numbers never clip.
+   */
+  unit?: string;
   /** ใช้ตั้งชื่อไฟล์ตอน export */
   exportName: string;
 }
