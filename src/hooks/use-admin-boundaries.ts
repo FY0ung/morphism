@@ -21,6 +21,9 @@ interface UseAdminBoundariesArgs {
   visible: boolean;
   /** Active UI theme — region colours are re-resolved from tokens on change. */
   theme?: string;
+  /** Colour-vision mode — bumps the cache key so the region view re-resolves
+   *  its category colours when the palette flips (default/viridis/gray). */
+  paletteVersion?: string;
   /** Province name → design-token CSS var for its region colour (region view). */
   regionVarFor: (provinceName: string) => string;
 }
@@ -108,6 +111,7 @@ export function useAdminBoundaries({
   map,
   visible,
   theme,
+  paletteVersion,
   regionVarFor,
 }: UseAdminBoundariesArgs): AdminBoundariesState {
   const [state, setState] = useState<AdminBoundariesState>({
@@ -153,7 +157,7 @@ export function useAdminBoundaries({
       ) {
         return;
       }
-    } else if (keyRef.current === `${level}|${theme ?? ""}`) {
+    } else if (keyRef.current === `${level}|${theme ?? ""}|${paletteVersion ?? ""}`) {
       return;
     }
 
@@ -186,7 +190,7 @@ export function useAdminBoundaries({
       keyRef.current = "subdistrict";
     } else {
       paddedRef.current = null;
-      keyRef.current = `${level}|${theme ?? ""}`;
+      keyRef.current = `${level}|${theme ?? ""}|${paletteVersion ?? ""}`;
     }
 
     function buildLevelFC(
@@ -232,7 +236,7 @@ export function useAdminBoundaries({
         })),
       };
     }
-  }, [map, visible, theme, regionVarFor]);
+  }, [map, visible, theme, paletteVersion, regionVarFor]);
 
   // Recompute on toggle/zoom-band change; for the subdistrict band also on pans
   // that leave the padded slice. Debounced on moveend like the admin hierarchy.

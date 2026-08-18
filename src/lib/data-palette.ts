@@ -64,15 +64,17 @@ export function applyColorVisionMode(mode: ColorVisionMode): void {
 /**
  * Resolve the SELECTED administrative-area colour (single-province highlight).
  * Default mode keeps today's per-region CATEGORICAL token (the caller passes
- * its region token var); Viridis mode maps the highlight onto ONE sequential
- * role instead — a categorical→sequential remap per region would falsely
- * imply ranking. This is the ONE place that branches on the mode; components
- * never test colorVision themselves.
+ * its region token var); the colour-vision palettes (viridis, gray) map the
+ * highlight onto ONE ramp role instead — a categorical→ramp remap per region
+ * would falsely imply ranking. This is the ONE place that branches on the
+ * mode; components never test colorVision themselves.
  */
 export function resolveAdminAreaColor(regionTokenVar: string): string {
   const mode = document.documentElement.dataset.colorVision;
   return readCssColor(
-    mode === "viridis" ? DATA_VIZ_VARS.adminArea : regionTokenVar,
+    mode === "viridis" || mode === "gray"
+      ? DATA_VIZ_VARS.adminArea
+      : regionTokenVar,
   );
 }
 

@@ -214,6 +214,15 @@ export interface ResolvedFloodDataset {
  * stats at all — flagged `complete: false` (an explicit partial-data notice,
  * never a silent substitution). Returns null when no stats are reachable.
  * `getComplete` is injected (server fetch in prod, fixtures in tests).
+ *
+ * "Latest available" is a REGISTRY question, never a calendar one: the
+ * selection depends only on `datesNewestFirst` order + completeness — the
+ * current date or any user-requested period plays no part here (period
+ * queries resolve through the flood-date path instead).
+ *
+ * A REJECTING probe (network fault while checking one date) is treated
+ * exactly like unreachable stats for that date — skipped, so one bad probe
+ * can never fail the whole resolution.
  */
 export async function resolveLatestCompleteFlood(
   datesNewestFirst: readonly string[],
@@ -221,7 +230,12 @@ export async function resolveLatestCompleteFlood(
 ): Promise<ResolvedFloodDataset | null> {
   let newestWithStats: string | null = null;
   for (const date of datesNewestFirst) {
-    const complete = await getComplete(date);
+    let complete: boolean | null;
+    try {
+      complete = await getComplete(date);
+    } catch {
+      continue; // probe failed for this date only — try the next
+    }
     if (complete === null) continue; // stats missing/unreachable for this date
     if (newestWithStats === null) newestWithStats = date;
     if (complete === true) return { date, complete: true };

@@ -19,6 +19,7 @@
     "mapAria": "タイの地図",
     "attributionAria": "地図データの出典",
     "timeAll": "すべてのデータ（時間フィルターなし）",
+    "timeSnapshot": "{{date}}",
     "clearTime": "時間フィルターを解除",
     "context": "AIの認識：{{layers}}レイヤー · ズーム {{zoom}}",
     "layersTitle": "データレイヤー",
@@ -85,8 +86,8 @@
       "default": "デフォルト",
       "viridis": "Viridis",
       "viridisDesc": "色覚多様性対応",
-      "blues": "Blues",
-      "bluesDesc": "単色",
+      "gray": "Gray",
+      "grayDesc": "Gray（モノクロ）",
       "comingSoon": "近日公開"
     },
     "dir": {
@@ -142,6 +143,11 @@
     "scenario": {
       "place": {
         "currentArea": "現在の表示範囲"
+      },
+      "foss4g": {
+        "intro": "FOSS4G Hiroshima でお会いしましょう！",
+        "join": "セッションはこちら：",
+        "title": "Designing Web Map Experiences Beyond Too Much Data and Too Little Time with Intelligent AI Processing"
       },
       "steps": {
         "catalog": "search_catalog('hospital') → OpenStreetMap"

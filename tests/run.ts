@@ -13,11 +13,14 @@ import { run as hospitalFilter } from "./hospital-filter.test";
 import { run as lru } from "./lru.test";
 import { run as settings } from "./settings.test";
 import { run as dataPalette } from "./data-palette.test";
+import { run as regionPalette } from "./region-palette.test";
+import { run as initialFloodContext } from "./initial-flood-context.test";
 import { run as scenarioResolution } from "./scenario-resolution.test";
 import { run as floodPeriod } from "./flood-period.test";
 import { run as floodCompareChart } from "./flood-compare-chart.test";
 import { run as mobileSheet } from "./mobile-sheet.test";
 import { run as japaneseIntent } from "./japanese-intent.test";
+import { run as foss4gPrompt } from "./foss4g-prompt.test";
 import { run as i18n } from "./i18n.test";
 
 // Suites may be sync or async (flood-proximity awaits dataset resolution).
@@ -30,11 +33,14 @@ const suites: [string, () => void | Promise<void>][] = [
   ["lru", lru],
   ["settings", settings],
   ["data-palette", dataPalette],
+  ["region-palette", regionPalette],
+  ["initial-flood-context", initialFloodContext],
   ["scenario-resolution", scenarioResolution],
   ["flood-period", floodPeriod],
   ["flood-compare-chart", floodCompareChart],
   ["mobile-sheet", mobileSheet],
   ["japanese-intent", japaneseIntent],
+  ["foss4g-prompt", foss4gPrompt],
   ["i18n", i18n],
 ];
 

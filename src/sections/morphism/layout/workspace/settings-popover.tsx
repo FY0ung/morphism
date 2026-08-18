@@ -332,10 +332,10 @@ export default function SettingsPopover({
 
         {/* Colour-vision palette — a DATA-PALETTE preference, deliberately
             separate from the appearance Theme above. Same segmented pattern as
-            the Language selector; only "default" (the existing palette) is
-            selectable. Viridis/Blues carry disabled semantics with their full
-            description + Coming Soon exposed via tooltip/aria (short labels
-            only inside the segments — no wrapping). */}
+            the Language selector; all three palettes (Default / Viridis /
+            Gray) are selectable, each exposing its full description via
+            tooltip/aria (short labels only inside the segments — no
+            wrapping). */}
         <h3 className="mb-2 mt-3 text-xs font-semibold uppercase tracking-wider text-text-default-onlight">
           {t("morphism.colorVision.title")}
         </h3>

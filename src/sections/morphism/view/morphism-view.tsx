@@ -25,10 +25,18 @@ import {
 } from "@/lib/api";
 import { ApiError } from "@/lib/api/client";
 import { floodPmtilesEnabled, floodPmtilesUrl } from "@/configs/flood-data";
-import { floodDatasetAvailable } from "@/configs/flood-datasets";
+import {
+  FLOOD_DATASET_DATES,
+  floodDatasetAvailable,
+} from "@/configs/flood-datasets";
+import { resolveInitialFloodContext } from "@/lib/initial-flood-context";
 import { endpoint } from "@/configs/endpoint";
 import { CAMERA } from "@/configs/motion";
-import { DEFAULT_COLOR_VISION, selectColorVision } from "@/configs/settings";
+import {
+  DEFAULT_COLOR_VISION,
+  normalizeColorVision,
+  selectColorVision,
+} from "@/configs/settings";
 import {
   MAP_CHROME_BOTTOM_CLASS,
   MAP_CHROME_TRANSITION_CLASS,
@@ -132,15 +140,18 @@ const MorphismView = () => {
   useEffect(() => {
     // Restore the persisted preference AFTER first paint (deferred — the lint
     // rule forbids synchronous setState in effects; matches the useUsers
-    // pattern). Disabled/unknown stored values resolve back to "default".
+    // pattern). normalizeColorVision maps the legacy planned "blues" value to
+    // its shipped successor "gray"; unknown values resolve back to "default".
     const timer = setTimeout(() => {
       const stored = localStorageGetItem("storage");
       const v =
         stored && typeof stored === "object"
           ? (stored as { colorVision?: unknown }).colorVision
           : undefined;
-      if (v === "default" || v === "viridis" || v === "blues") {
-        setColorVision(selectColorVision(DEFAULT_COLOR_VISION, v));
+      if (v !== undefined) {
+        setColorVision(
+          selectColorVision(DEFAULT_COLOR_VISION, normalizeColorVision(v)),
+        );
       }
     }, 0);
     return () => clearTimeout(timer);
@@ -218,6 +229,25 @@ const MorphismView = () => {
   const floodAbortRef = useRef<AbortController | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Initial flood CONTEXT (default map state — NOT an AI scenario) ───────
+  // The newest usable registered DATE snapshot is shown automatically on a
+  // pristine map: no chat message, no processing steps, no scene-history
+  // entry, no camera move. Cleared by the time pill's ✕, replaced by any
+  // scenario, re-armed when undo/reset returns to the blank scene.
+  const [initialContext, setInitialContext] = useState<{ date: string } | null>(
+    null,
+  );
+  // False once a scenario ran / the user toggled layers / the pill was
+  // cleared — the context never re-arms behind the user's back.
+  const pristineRef = useRef(true);
+  // Cache so re-arming after reset never refetches or duplicates sources.
+  const initialOverviewRef = useRef<{
+    date: string;
+    overview: FloodHexOverview;
+  } | null>(null);
+  // Bumped to re-run the context effect when reset re-arms the pristine map.
+  const [contextArm, setContextArm] = useState(0);
 
   // ── Scene-level undo/redo — extracted to useSceneHistory (Phase 3B) ──────
   // The hook owns the history bookkeeping; HOW a scene is applied stays here
@@ -321,6 +351,8 @@ const MorphismView = () => {
     map,
     visible: layers.boundaries.visible,
     theme: resolvedTheme,
+    // Region-view fills re-resolve their category colours on palette switch.
+    paletteVersion: colorVision,
     regionVarFor,
   });
   // Push the computed level FC into the map's `boundaries` source (ref-backed,
@@ -390,6 +422,91 @@ const MorphismView = () => {
       controller.abort();
     };
   }, []);
+
+  // ── INITIAL-CONTEXT-EFFECT-START ─────────────────────────────────────────
+  // Default map context: once the map exists and the app is pristine, resolve
+  // the newest usable registered DATE snapshot and show its LIGHTWEIGHT flood
+  // representation (hex overview + PMTiles at detail zoom). Never the raw full
+  // GeoJSON, never an area calculation, never a camera move, never a chat
+  // message or history entry. Failure = keep the empty state silently (dev
+  // log only). Deps intentionally exclude lang/theme/colorVision — labels
+  // re-localize at render and colours re-resolve via CSS variables, with no
+  // refetch and no dataset change.
+  useEffect(() => {
+    if (!map || !pristineRef.current || initialContext) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        // Probe = lightweight artifacts only. PMTiles mode wants stats (for
+        // featureCount) + overview; geojson mode uses the tiny gz overview.
+        const overviewFor = async (d: string): Promise<FloodHexOverview | null> => {
+          if (floodPmtilesEnabled()) {
+            const [stats, ov] = await Promise.all([
+              getFloodStats(d, controller.signal),
+              getFloodOverviewByKey(d, controller.signal),
+            ]);
+            return stats && stats.featureCount > 0 ? ov : null;
+          }
+          return endpoint.flood.assetBase
+            ? getFloodOverviewAsset(d, controller.signal)
+            : null;
+        };
+        let overview: FloodHexOverview | null = null;
+        const date = await resolveInitialFloodContext(
+          FLOOD_DATASET_DATES,
+          async (d) => {
+            const cached = initialOverviewRef.current;
+            const ov =
+              cached && cached.date === d ? cached.overview : await overviewFor(d);
+            const hexes = ov
+              ? ov.coarse.features.length + ov.fine.features.length
+              : 0;
+            if (ov && hexes > 0) {
+              overview = ov;
+              return true;
+            }
+            return false;
+          },
+        );
+        if (controller.signal.aborted || !date || !overview) {
+          if (!date && process.env.NODE_ENV !== "production") {
+            console.info(
+              "[initial-context] no usable flood snapshot — keeping the empty initial state",
+            );
+          }
+          return;
+        }
+        if (!pristineRef.current) return; // a scenario arrived while loading
+        initialOverviewRef.current = { date, overview };
+        setFloodOverview(overview);
+        if (floodPmtilesEnabled()) commitFloodTiles(floodPmtilesUrl(date));
+        // byAI=false: this is ambient context, not an assistant action.
+        applyExact(["flood"], false);
+        setInitialContext({ date });
+      } catch (err) {
+        if (process.env.NODE_ENV !== "production") {
+          console.info("[initial-context] load failed — empty state kept", err);
+        }
+      }
+    })();
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- contextArm re-arms after reset; label/palette localisation is render-time
+  }, [map, contextArm, applyExact, commitFloodTiles, setFloodOverview]);
+  // ── INITIAL-CONTEXT-EFFECT-END ───────────────────────────────────────────
+
+  /** Dismiss the default context (pill ✕ / manual layer toggle): back to the
+   *  empty "All data" state without touching anything a user set up. */
+  const dismissInitialContext = useCallback(() => {
+    pristineRef.current = false;
+    setInitialContext((ctx) => {
+      if (ctx) {
+        setFloodOverview(null);
+        commitFloodTiles(null);
+        applyExact([], false);
+      }
+      return null;
+    });
+  }, [applyExact, commitFloodTiles, setFloodOverview]);
 
   // Fetch the real hospital points once (client-side) and feed them to the map
   // source so the zoom gate has real data to reveal at zoom ≥ 11.8.
@@ -843,11 +960,21 @@ const MorphismView = () => {
       const all = boundariesRef.current;
       const names = scenario.provinceNames ?? [];
       const colorCache = new Map<string, string>();
-      // Region-compare keeps the CATEGORICAL per-region tokens in every mode
-      // (labels + outlines carry the identity; a sequential remap would imply
-      // ranking). The single-selection highlight resolves through the
-      // colour-vision palette (default = the same region token as before).
-      const categorical = Boolean(scenario.regionCompare);
+      const activeRegions = [
+        ...new Set(
+          names
+            .map((pn) => provinceRegion(pn))
+            .filter((r): r is string => r !== null),
+        ),
+      ];
+      // MULTI-region draws (region-compare, nationwide) are CATEGORICAL: each
+      // region keeps its identity colour in every colour-vision mode via the
+      // per-region category roles (REGION_TOKEN_VAR → --color-data-region-*),
+      // so palettes recolour the six classes without ever collapsing them.
+      // Only a SINGLE-selection highlight routes through the sequential
+      // admin-area role (a per-region ramp remap would falsely imply ranking).
+      const categorical =
+        Boolean(scenario.regionCompare) || activeRegions.length > 1;
       const colorFor = (region: string | null) => {
         const tokenVar =
           (region && REGION_TOKEN_VAR[region]) || REGION_DEFAULT_TOKEN;
@@ -860,13 +987,6 @@ const MorphismView = () => {
         }
         return c;
       };
-      const activeRegions = [
-        ...new Set(
-          names
-            .map((pn) => provinceRegion(pn))
-            .filter((r): r is string => r !== null),
-        ),
-      ];
       setBoundaryColor(
         activeRegions.length === 1 ? colorFor(activeRegions[0]) : colorFor(null),
       );
@@ -940,6 +1060,11 @@ const MorphismView = () => {
     setTimeActive(false);
     setTimeLabel(null);
     applyExact([]);
+    // Back at the blank scene → RE-ARM the initial flood context (restored
+    // from cache — no refetch, and the single-source setters above make
+    // duplicates impossible).
+    pristineRef.current = true;
+    setContextArm((c) => c + 1);
   }, [
     applyExact,
     abortAndClearCompare,
@@ -962,7 +1087,55 @@ const MorphismView = () => {
     ): void | Promise<void | ScenarioOutcome> => {
       // Unknown/unmatched query: keep the current map result untouched — no
       // layers, no camera move, no toast. (The chat shows the fallback message.)
-      if (scenario.mode === "unknown") return;
+      if (scenario.mode === "unknown") {
+        // …except PRESENTATION mode (the FOSS4G prompt): fly to the
+        // destination, outline it, label the pill — then stop. No resolver, no
+        // dataset load, no analysis, no scene-history entry. It reuses the
+        // SAME helpers the normal flows use (flyTo → CAMERA token + live
+        // prefers-reduced-motion; setBoundaries → the existing `adm`
+        // fill/line layers), so nothing bespoke is introduced.
+        const pres = scenario.presentation;
+        if (pres) {
+          // Thailand's default flood context would be both invisible here and
+          // misleading in the pill — release it (layer + tiles) so nothing
+          // Thai lingers over Japan and the pill can state the demo date.
+          dismissInitialContext();
+          setBoundaries({
+            type: "FeatureCollection",
+            features: [
+              {
+                type: "Feature",
+                // MultiPolygon: mainland + the detached islands/peninsula that
+                // are genuinely part of the municipality.
+                geometry: {
+                  type: "MultiPolygon",
+                  coordinates: pres.boundary.map((ring) => [ring]),
+                },
+                properties: {
+                  name: pres.placeName,
+                  // Same admin-outline data role every boundary uses →
+                  // theme- and colour-vision-correct in every mode.
+                  color: readCssColor(REGION_DEFAULT_TOKEN),
+                },
+              },
+            ],
+          });
+          setTimeActive(true);
+          setTimeLabel(pres.pillLabel);
+        }
+        // Frame the boundary itself (padded) when bounds are supplied; the
+        // fixed camera is only the fallback. Both helpers already honour
+        // prefers-reduced-motion.
+        if (scenario.bounds) fitBounds(scenario.bounds);
+        else if (scenario.camera) flyTo(scenario.camera);
+        return;
+      }
+
+      // Any real scenario supersedes the initial flood CONTEXT: the scenario's
+      // own layer/reset logic is authoritative from here on, and the context
+      // never re-arms behind the user's back.
+      pristineRef.current = false;
+      setInitialContext(null);
 
       // Record this scene for undo/redo (the hook ignores calls made while a
       // history step is replaying).
@@ -1195,6 +1368,7 @@ const MorphismView = () => {
       showToast(t("morphism.toast.applied"));
     },
     [
+      dismissInitialContext,
       applyExact,
       setAggregate,
       setBoundaries,
@@ -1271,7 +1445,16 @@ const MorphismView = () => {
   }, [sceneNav.canRedo, sceneRedo, showToast, t]);
 
   const handleToggleLayer = useCallback(
-    (id: LayerId) => toggleLayer(id),
+    (id: LayerId) => {
+      // A manual layer change means the map is no longer the pristine default
+      // context: drop the context PILL/LEGEND claim (the snapshot label would
+      // now be misleading) but keep whatever layers the user chose. The
+      // overview/tiles stay attached while the flood layer remains on, so the
+      // generic legend row still matches what's rendered.
+      pristineRef.current = false;
+      setInitialContext(null);
+      toggleLayer(id);
+    },
     [toggleLayer],
   );
 
@@ -1354,9 +1537,21 @@ const MorphismView = () => {
         />
 
         <MapTopBar
-          timeActive={timeActive}
-          timeLabel={timeLabel}
+          // The initial context shows a truthful dated SNAPSHOT label (never
+          // "current"/"live"); localized at render so language switches never
+          // reload the dataset. Scenario time labels take over untouched.
+          timeActive={timeActive || initialContext !== null}
+          timeLabel={
+            initialContext !== null
+              ? t("morphism.timeSnapshot", {
+                  date: formatDate(initialContext.date, lang),
+                })
+              : timeLabel
+          }
           onClearTime={() => {
+            // ✕ on the context pill returns to "All data" + removes the
+            // default flood layer; a scenario pill clears as before.
+            if (initialContext !== null) dismissInitialContext();
             setTimeActive(false);
             setTimeLabel(null);
           }}
@@ -1449,6 +1644,7 @@ const MorphismView = () => {
             }
             floodPartial={floodPartial}
             floodBuffer={bufferAnalysis}
+            floodContext={initialContext !== null}
             sheetDragging={sheet.dragging}
           />
 

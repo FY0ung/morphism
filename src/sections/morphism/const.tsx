@@ -47,6 +47,7 @@ import {
  * intent parsing + scenario building only. Re-exported below so existing
  * importers keep working. */
 import {
+  PRESENTATION_PLACES,
   PROV_CENTROID,
   PROVINCE_ALIASES,
   PROVINCE_EN,
@@ -70,6 +71,7 @@ export {
   REGION_TOKEN_VAR,
   provinceRegion,
 };
+import { CAMERA } from "@/configs/motion";
 import type { TFunction } from "@/languages/types";
 import { normalizeProvinceName } from "@/lib/geo";
 import { totalOfCounts, type ProvinceCounts } from "@/lib/hospital-stats";
@@ -538,10 +540,14 @@ const scnNation = (
   counts?: ProvinceCounts,
 ): Scenario => {
   // Region-keyed rows so chart labels can be localized (regionBadges' name is a
-  // display-only Thai label used for the map aggregate).
+  // display-only Thai label used for the map aggregate). Each bar carries its
+  // REGION CATEGORY colour (same REGION_FILL mapping the map + legend use), so
+  // bars stay distinguishable — and identical to the map — in every
+  // colour-vision mode. Colour = identity; LENGTH already encodes magnitude.
   const regionRows = Object.keys(REGIONS).map((rg) => ({
     label: regionLabelShort(rg, lang),
     value: regionTotal(rg, counts),
+    swatch: REGION_FILL[rg],
   }));
   return {
     id: "nation",
@@ -1124,6 +1130,85 @@ function scnFloodByDate(
   };
 }
 
+/* ── FOSS4G Hiroshima — special presentation prompt ────────────────────────
+ * The EXACT input "01 September 2026" (case/space-insensitive only) is a demo
+ * easter egg, never a data query: it must not resolve a flood date, run a
+ * scenario, touch layers/camera/time-filter, or search datasets. It rides the
+ * `mode: "unknown"` contract, which the view returns from BEFORE any map
+ * state, initial-context or scene-history mutation — so the map is provably
+ * left exactly as it was, with no tool-processing steps rendered.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/** Canonical form of the trigger (compared against the normalized query). */
+export const FOSS4G_PROMPT = "01 september 2026";
+
+/** True only for the exact special input (ignoring case + outer/inner spacing). */
+export function isFoss4gPrompt(raw: string): boolean {
+  return raw.trim().toLowerCase().replace(/\s+/g, " ") === FOSS4G_PROMPT;
+}
+
+/** Where the FOSS4G prompt flies the camera (deterministic registry entry —
+ *  no geocoding round-trip, no coordinates inside components). */
+export const FOSS4G_PLACE = PRESENTATION_PLACES.hiroshima;
+
+/** Pill text for the presentation state — the trigger date itself, rendered
+ *  in the app's long-date style (never a flood-snapshot label). */
+export const FOSS4G_PILL_LABEL = "01 September 2026";
+
+/** Bounds of the real Hiroshima City outline — what the camera fits to. */
+export function foss4gBounds(): MapBounds {
+  const pts = FOSS4G_PLACE.boundary.flat();
+  const lngs = pts.map((p) => p[0]);
+  const lats = pts.map((p) => p[1]);
+  return {
+    sw: [Math.min(...lngs), Math.min(...lats)],
+    ne: [Math.max(...lngs), Math.max(...lats)],
+    duration: CAMERA.scopeFit,
+  };
+}
+
+/**
+ * Promo reply for the FOSS4G Hiroshima session. Localized intro copy; the
+ * event name and the talk title are proper nouns and stay in English in every
+ * locale.
+ *
+ * Carries a CAMERA ONLY: the view flies to Hiroshima (existing `flyTo` helper
+ * → shared CAMERA duration token + live reduced-motion handling) and returns
+ * before any layer/dataset/time-filter/history mutation, because the scenario
+ * stays `mode: "unknown"`. Existing scenes keep their state; nothing is re-run
+ * or re-labelled for Hiroshima.
+ */
+const scnFoss4g = (t: TFunction): Scenario => {
+  const message = [
+    t("morphism.scenario.foss4g.intro"),
+    ``,
+    t("morphism.scenario.foss4g.join"),
+    t("morphism.scenario.foss4g.title"),
+  ].join("\n");
+  return {
+    id: "foss4g",
+    mode: "unknown", // ← no layers, no steps, no history entry, no time filter
+    layers: [],
+    // Frame the REAL city boundary (fitBounds + padding) instead of a fixed
+    // zoom, so the outline sits comfortably in view at any window size. The
+    // camera below is only the fallback when bounds can't be applied.
+    bounds: foss4gBounds(),
+    camera: {
+      center: FOSS4G_PLACE.center,
+      zoom: FOSS4G_PLACE.zoom,
+      duration: CAMERA.scopeFit,
+    },
+    presentation: {
+      placeName: FOSS4G_PLACE.name,
+      boundary: FOSS4G_PLACE.boundary,
+      pillLabel: FOSS4G_PILL_LABEL,
+    },
+    interim: message,
+    steps: [],
+    result: message,
+  };
+};
+
 /**
  * Unknown / unmatched query — NO map side-effects (the view skips everything for
  * mode "unknown"), no tool steps, just a friendly fallback message.
@@ -1183,6 +1268,11 @@ export function resolveScenario(
    *  these instead of the static reference table. */
   counts?: ProvinceCounts,
 ): Scenario {
+  // SPECIAL demo prompt — checked FIRST so it can never reach the date/flood
+  // resolvers. Only the exact "01 September 2026" matches; every other date
+  // (e.g. "18 December 2025") falls through to the normal query paths below.
+  if (isFoss4gPrompt(raw)) return scnFoss4g(t);
+
   // Normalise the query (NFKC folds full-width → half-width, then lowercase) so
   // Latin, Thai and Japanese aliases all match — see configs/intent-keywords.ts.
   const q = normalizeQuery(raw);

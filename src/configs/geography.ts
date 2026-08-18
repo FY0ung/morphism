@@ -179,12 +179,17 @@ export const REGION_EN_LONG: Record<string, string> = {
  * at runtime via readCssColor.
  */
 export const REGION_TOKEN_VAR: Record<string, string> = {
-  กลาง: "--color-background-primary-default", // pigeon → primary
-  เหนือ: "--color-background-success-default", // tower/teal → success
-  อีสาน: "--color-background-secondary-default", // lilac → secondary
-  ใต้: "--color-background-error-default", // illusion/rose → error
-  ตะวันออก: "--color-background-info-default", // blue → info
-  ตะวันตก: "--color-background-warning-default", // green → warning
+  // CATEGORICAL region roles (globals.css). Default mode aliases the exact
+  // original tokens (primary/success/secondary/error/info/warning), so default
+  // rendering is unchanged; the colour-vision palettes override each role with
+  // its 6-class categorical sample. Mapping is fixed by REGION IDENTITY —
+  // never reordered by count/value.
+  กลาง: "--color-data-region-central", // default → primary (pigeon)
+  เหนือ: "--color-data-region-north", // default → success (tower/teal)
+  อีสาน: "--color-data-region-northeast", // default → secondary (lilac)
+  ใต้: "--color-data-region-south", // default → error (illusion/rose)
+  ตะวันออก: "--color-data-region-east", // default → info (blue)
+  ตะวันตก: "--color-data-region-west", // default → warning (green)
 };
 
 /** Default token when a province's region is unknown. */
@@ -195,21 +200,21 @@ export const REGION_DEFAULT_TOKEN = "--color-border-primary-default";
 // map, chart and legend colours stay identical. เหนือ = tower/teal (success),
 // อีสาน = lilac/purple (secondary).
 export const REGION_FILL: Record<string, string> = {
-  กลาง: "fill-background-primary-default",
-  เหนือ: "fill-background-success-default",
-  อีสาน: "fill-background-secondary-default",
-  ใต้: "fill-background-error-default",
-  ตะวันออก: "fill-background-info-default",
-  ตะวันตก: "fill-background-warning-default",
+  กลาง: "fill-data-region-central",
+  เหนือ: "fill-data-region-north",
+  อีสาน: "fill-data-region-northeast",
+  ใต้: "fill-data-region-south",
+  ตะวันออก: "fill-data-region-east",
+  ตะวันตก: "fill-data-region-west",
 };
 
 export const REGION_BG: Record<string, string> = {
-  กลาง: "bg-background-primary-default",
-  เหนือ: "bg-background-success-default",
-  อีสาน: "bg-background-secondary-default",
-  ใต้: "bg-background-error-default",
-  ตะวันออก: "bg-background-info-default",
-  ตะวันตก: "bg-background-warning-default",
+  กลาง: "bg-data-region-central",
+  เหนือ: "bg-data-region-north",
+  อีสาน: "bg-data-region-northeast",
+  ใต้: "bg-data-region-south",
+  ตะวันออก: "bg-data-region-east",
+  ตะวันตก: "bg-data-region-west",
 };
 
 /** Which region a province belongs to (null if not found). */
@@ -256,4 +261,111 @@ export const PROVINCE_ALIASES: Record<string, string> = {
   "chiang rai": "เชียงราย",
   chiangrai: "เชียงราย",
   phuket: "ภูเก็ต",
+};
+
+/* ── Presentation destinations ─────────────────────────────────────────────
+ * Named places OUTSIDE the Thai dataset that demo/presentation prompts fly to.
+ * Deterministic registry (no geocoding round-trip, no coordinates scattered in
+ * components): a prompt resolves a KEY here and the scenario builds its camera
+ * from the entry. Zooms are city/metro level — enough context to recognise the
+ * destination, never street level.
+ * ───────────────────────────────────────────────────────────────────────── */
+export interface PresentationPlace {
+  /** Display name (proper noun — never localized). */
+  name: string;
+  /** [lng, lat] of the city centre. */
+  center: [number, number];
+  /** City/metro-level zoom for a presentation view. */
+  zoom: number;
+  /**
+   * REAL administrative boundary of the municipality as closed [lng, lat]
+   * rings (a MultiPolygon outer-ring set — mainland plus detached islands).
+   *
+   * Source: MLIT 国土数値情報 行政区域データ (N03-21), via
+   * smartnews-smri/japan-topography (municipality level, 1 % simplification).
+   * Hiroshima City is a designated city, so the dataset stores it as its eight
+   * WARD polygons (N03_003 = 広島市, N03_007 = 34101–34108); those were
+   * dissolved into the city outline by cancelling shared ward edges, and the
+   * result was cross-checked against the same project's pre-dissolved
+   * designated-city file. Generalized for display at city zoom — presentation
+   * geometry, never used for analysis or measurement.
+   */
+  boundary: [number, number][][];
+}
+
+export const PRESENTATION_PLACES: Record<string, PresentationPlace> = {
+  // FOSS4G 2026 host city — Hiroshima City (広島市), Hiroshima Prefecture.
+  hiroshima: {
+    name: "Hiroshima City, Japan",
+    center: [132.4553, 34.3853],
+    zoom: 10,
+    boundary: [
+      [
+        [132.4229,34.363],[132.4205,34.3592],[132.4367,34.3531],[132.438,34.3456],
+        [132.444,34.3405],[132.4498,34.3408],[132.4495,34.3468],[132.4525,34.3528],
+        [132.4691,34.3529],[132.4785,34.3567],[132.4826,34.3536],[132.492,34.3535],
+        [132.4964,34.357],[132.5062,34.3557],[132.5176,34.3651],[132.5178,34.3638],
+        [132.5182,34.3617],[132.5182,34.3622],[132.5274,34.3685],[132.5311,34.3761],
+        [132.5462,34.3861],[132.558,34.3851],[132.5669,34.3817],[132.5661,34.3761],
+        [132.5787,34.3745],[132.5812,34.3808],[132.5915,34.3804],[132.5983,34.3785],
+        [132.6013,34.3803],[132.6145,34.3749],[132.6229,34.3731],[132.6314,34.3616],
+        [132.6275,34.3532],[132.6428,34.3533],[132.6442,34.3617],[132.651,34.3647],
+        [132.6536,34.3687],[132.6501,34.3765],[132.6493,34.3836],[132.6443,34.3888],
+        [132.6465,34.3959],[132.6404,34.3991],[132.6443,34.4131],[132.6522,34.4223],
+        [132.6598,34.4233],[132.6661,34.4276],[132.6635,34.4375],[132.6546,34.4435],
+        [132.6475,34.4376],[132.6415,34.442],[132.6357,34.4434],[132.6332,34.45],
+        [132.624,34.4463],[132.6154,34.4465],[132.614,34.4512],[132.6079,34.4565],
+        [132.6005,34.4573],[132.6025,34.4681],[132.606,34.4717],[132.6068,34.481],
+        [132.601,34.4834],[132.603,34.4872],[132.6092,34.4903],[132.6187,34.4908],
+        [132.6283,34.4983],[132.6334,34.507],[132.6444,34.5053],[132.6491,34.5146],
+        [132.656,34.5234],[132.6629,34.5265],[132.6654,34.5315],[132.6737,34.5304],
+        [132.6842,34.5268],[132.6931,34.5294],[132.6961,34.5358],[132.6869,34.5414],
+        [132.6921,34.5463],[132.6876,34.5567],[132.6899,34.5618],[132.6833,34.5655],
+        [132.6856,34.5721],[132.6941,34.5839],[132.6929,34.5898],[132.6791,34.604],
+        [132.6716,34.6068],[132.6648,34.6069],[132.654,34.5995],[132.6457,34.602],
+        [132.6325,34.5972],[132.6245,34.6],[132.6196,34.5987],[132.6136,34.6012],
+        [132.6086,34.5963],[132.6104,34.5923],[132.6082,34.586],[132.5962,34.5853],
+        [132.5903,34.5816],[132.5908,34.5752],[132.5781,34.564],[132.5732,34.5632],
+        [132.5692,34.5726],[132.5657,34.5721],[132.5605,34.5769],[132.5507,34.5783],
+        [132.544,34.5837],[132.5385,34.5832],[132.5307,34.5882],[132.5326,34.5909],
+        [132.5248,34.6064],[132.5194,34.607],[132.5118,34.5964],[132.4993,34.5937],
+        [132.4982,34.599],[132.4876,34.606],[132.4813,34.6061],[132.4803,34.6118],
+        [132.4724,34.6148],[132.4644,34.6138],[132.4567,34.6032],[132.4497,34.5998],
+        [132.4389,34.592],[132.4307,34.5973],[132.4258,34.6032],[132.4207,34.6031],
+        [132.4153,34.5991],[132.4047,34.6023],[132.4001,34.6039],[132.3947,34.5991],
+        [132.3901,34.5916],[132.3918,34.5854],[132.3873,34.5831],[132.3881,34.5733],
+        [132.3907,34.5711],[132.3898,34.5622],[132.3748,34.548],[132.3677,34.545],
+        [132.367,34.5401],[132.3599,34.5381],[132.3635,34.5475],[132.3526,34.5545],
+        [132.3428,34.5519],[132.3405,34.5552],[132.331,34.5552],[132.305,34.5507],
+        [132.2922,34.5474],[132.2915,34.5447],[132.2789,34.5423],[132.2695,34.5354],
+        [132.2656,34.5359],[132.2492,34.5297],[132.2396,34.517],[132.2424,34.5104],
+        [132.239,34.5075],[132.2332,34.5111],[132.2299,34.5094],[132.215,34.5142],
+        [132.2057,34.5098],[132.2039,34.4994],[132.1961,34.4964],[132.1889,34.4983],
+        [132.2,34.4909],[132.2033,34.4847],[132.1967,34.4776],[132.1935,34.4679],
+        [132.1936,34.4574],[132.1961,34.4532],[132.1786,34.4426],[132.1914,34.4352],
+        [132.1936,34.4314],[132.1909,34.4243],[132.1956,34.4159],[132.2182,34.4163],
+        [132.2189,34.4199],[132.229,34.4311],[132.2357,34.4311],[132.2451,34.4233],
+        [132.2495,34.4236],[132.2543,34.4178],[132.2548,34.414],[132.2813,34.4096],
+        [132.2848,34.4025],[132.2831,34.4002],[132.2844,34.3897],[132.2932,34.3853],
+        [132.3001,34.3843],[132.3035,34.3926],[132.3004,34.3991],[132.2996,34.4073],
+        [132.3052,34.4145],[132.3114,34.4193],[132.3144,34.4159],[132.313,34.4101],
+        [132.3167,34.4061],[132.3243,34.4058],[132.3207,34.3973],[132.3209,34.388],
+        [132.317,34.3813],[132.3236,34.3796],[132.3346,34.3723],[132.3354,34.3676],
+        [132.3423,34.3663],[132.347,34.3565],[132.3603,34.3557],[132.3647,34.3475],
+        [132.3769,34.3524],[132.3751,34.3597],[132.3782,34.3609],[132.3975,34.363],
+        [132.3993,34.3654],[132.4132,34.3572],[132.4205,34.3592],[132.4229,34.363]
+      ],
+      [
+        [132.5192,34.3566],[132.5229,34.3419],[132.5301,34.3337],[132.5336,34.3164],
+        [132.5364,34.3147],[132.5545,34.3128],[132.5567,34.3229],[132.5517,34.3316],
+        [132.5514,34.3398],[132.5544,34.3441],[132.5489,34.3568],[132.5392,34.3615],
+        [132.538,34.3581],[132.5281,34.3601],[132.5192,34.3566]
+      ],
+      [
+        [132.4409,34.3259],[132.4325,34.3201],[132.4337,34.3147],[132.424,34.3028],
+        [132.4318,34.2981],[132.4422,34.3024],[132.4455,34.3178],[132.4441,34.3252],
+        [132.4409,34.3259]
+      ]
+    ],
+  },
 };

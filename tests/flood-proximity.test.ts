@@ -2,6 +2,8 @@
 // point-in-polygon, distance-to-polygon, the hospitalsNearFlood spatial query
 // and the latest-COMPLETE dataset resolution + the stale-request guard idiom.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import {
   FLOOD_PROXIMITY_RADIUS_KM,
   distanceToFloodGeometryKm,
@@ -9,6 +11,10 @@ import {
   pointInFloodGeometry,
   resolveLatestCompleteFlood,
 } from "@/lib/flood-proximity";
+import {
+  FLOOD_DATASET_DATES,
+  FLOOD_DATASET_DATE_SET,
+} from "@/configs/flood-datasets";
 import type { FeatureCollection, Geometry, HospitalFC } from "@/types";
 
 const h = (
@@ -152,6 +158,78 @@ export async function run(): Promise<void> {
     d === "2025-10-19" ? null : true,
   );
   assert.deepEqual(holey, { date: "2025-10-17", complete: true });
+
+  // ── "latest available" regression (resolve_latest_complete_flood) ─────────
+  // 1/7. Selects the GLOBALLY newest complete dataset from the REAL registry —
+  // and the selected key exists in the registry (nothing is invented).
+  const registryResolved = await resolveLatestCompleteFlood(
+    FLOOD_DATASET_DATES,
+    async (d) => (FLOOD_DATASET_DATE_SET.has(d) ? true : null),
+  );
+  assert.ok(registryResolved, "registry resolution must succeed");
+  assert.equal(
+    registryResolved!.date,
+    FLOOD_DATASET_DATES[0],
+    "latest-available = the first (newest) registry entry",
+  );
+  assert.ok(FLOOD_DATASET_DATE_SET.has(registryResolved!.date));
+
+  // 2/3. Independent of today's date / any "last week" range: the resolver
+  // consumes ONLY registry order + completeness (no Date access in the
+  // selection path — asserted at source level), so a mocked "today" far in
+  // the future changes nothing.
+  const proximitySrc = readFileSync(
+    path.join(process.cwd(), "src", "lib", "flood-proximity.ts"),
+    "utf8",
+  );
+  const resolverSection = proximitySrc.slice(
+    proximitySrc.indexOf("resolveLatestCompleteFlood"),
+  );
+  assert.ok(
+    !/new Date\(|Date\.now\(/.test(resolverSection),
+    "resolver never consults the calendar",
+  );
+
+  // 6. Newest-first ordering across months AND years is a registry invariant
+  // the resolver depends on — a mis-ordered entry would silently change what
+  // "latest" means, so lock it (2025-12-18 must sort above 2025-10-19 etc.).
+  for (let i = 1; i < FLOOD_DATASET_DATES.length; i++) {
+    assert.ok(
+      FLOOD_DATASET_DATES[i - 1] > FLOOD_DATASET_DATES[i],
+      `registry strictly newest-first at index ${i}`,
+    );
+  }
+  // No duplicates (Set size = list length).
+  assert.equal(FLOOD_DATASET_DATE_SET.size, FLOOD_DATASET_DATES.length);
+
+  // 5b. A REJECTING probe (transient network fault on one date) is skipped —
+  // it must never fail the whole resolution (previously it did, and worse,
+  // the route negatively CACHED transient nulls so one blip poisoned every
+  // later request until a server restart).
+  const throwsOnNewest = await resolveLatestCompleteFlood(dates, async (d) => {
+    if (d === "2025-10-19") throw new Error("transient fetch failure");
+    return true;
+  });
+  assert.deepEqual(throwsOnNewest, { date: "2025-10-17", complete: true });
+  // Transient failure everywhere → null now, but a RETRY with the network
+  // back must succeed (nothing may be permanently poisoned at this layer).
+  const outage = await resolveLatestCompleteFlood(dates, async () => {
+    throw new Error("offline");
+  });
+  assert.equal(outage, null);
+  const afterOutage = await resolveLatestCompleteFlood(dates, async () => true);
+  assert.deepEqual(afterOutage, { date: "2025-10-19", complete: true });
+
+  // Route-level guard: statsComplete must not negatively cache `null`
+  // (the regression), while definitive true/false stay cached.
+  const routeSrc = readFileSync(
+    path.join(process.cwd(), "src", "app", "api", "flood-buffer", "route.ts"),
+    "utf8",
+  );
+  assert.ok(
+    /if \(value !== null\) completeCache\.set\(date, value\);/.test(routeSrc),
+    "statsComplete caches only definitive answers (transient misses retryable)",
+  );
 
   // ── stale-request prevention (the guard idiom the view uses) ─────────────
   // A newer prompt supersedes an older in-flight one: the older result must

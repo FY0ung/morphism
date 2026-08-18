@@ -93,7 +93,12 @@ async function statsComplete(date: string): Promise<boolean | null> {
       value = !live.partial;
     }
   }
-  completeCache.set(date, value);
+  // Cache ONLY definitive answers. `null` means the stats/upstream were
+  // UNREACHABLE (a transient condition) — negatively caching it once poisoned
+  // every later request in the server's lifetime: one network blip marked all
+  // dates null forever, so resolve_latest_complete_flood() answered 503
+  // instantly (~0 ms) until a restart. Transient misses must stay retryable.
+  if (value !== null) completeCache.set(date, value);
   return value;
 }
 

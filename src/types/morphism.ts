@@ -80,11 +80,11 @@ export type LayoutDirection = "ltr" | "rtl";
 /**
  * Colour-vision (data-palette) preference — INDEPENDENT of the appearance
  * Theme (dark/light). "default" is the existing Morphism palette; "viridis"
- * (CVD-safe sequential) and "blues" (single-hue) are registered but not yet
- * implemented, so they are presented as disabled options. Selecting a theme
- * must never change this value, and vice versa.
+ * (CVD-safe sequential) and "gray" (monochrome) are fully implemented,
+ * selectable runtime palettes. Selecting a theme must never change this
+ * value, and vice versa.
  */
-export type ColorVisionMode = "default" | "viridis" | "blues";
+export type ColorVisionMode = "default" | "viridis" | "gray";
 
 /**
  * A left–right flood swipe-compare. Each side is a resolved observation DATE
@@ -254,6 +254,21 @@ export interface Scenario {
    * ซ่อนหมุด รพ. และไม่ลงลึก ADM2/ADM3. คู่กับ aggregate ที่เป็น "หนึ่งภาคต่อรายการ".
    */
   regionCompare?: boolean;
+  /**
+   * PRESENTATION mode (demo easter egg — not a GIS workflow). Carries the
+   * destination outline + the literal pill text so the view can fly, draw the
+   * boundary and label the pill WITHOUT running any resolver, dataset load,
+   * analysis or scene-history entry. `mode` stays "unknown".
+   */
+  presentation?: {
+    /** Display name of the destination (proper noun). */
+    placeName: string;
+    /** The destination's REAL admin boundary — closed [lng, lat] rings
+     *  (MultiPolygon outer rings: mainland + detached islands). */
+    boundary: [number, number][][];
+    /** Exact text shown in the time pill (already presentation-formatted). */
+    pillLabel: string;
+  };
   /** เปิดตัวกรองเวลาหรือไม่ */
   timeActive?: boolean;
   /** ป้ายช่วงเวลาที่แสดงในชิปบนแผนที่ */

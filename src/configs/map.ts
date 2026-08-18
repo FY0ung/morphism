@@ -15,6 +15,10 @@ export const BASEMAP_STYLE = DARK_BASEMAP_STYLE;
 export const basemapStyleFor = (theme?: string): string =>
   theme === "light" ? LIGHT_BASEMAP_STYLE : DARK_BASEMAP_STYLE;
 
-// Initial camera — matches the HTML reference (central Bangkok).
+// Initial camera — central Bangkok. Zoom 10 (was 11.4): the default view now
+// opens with the wider metro region so the automatic flood-snapshot context
+// has more geographic context on first paint. This is the MOUNT camera only —
+// the initial context never moves the camera, and every scenario still sets
+// its own camera/bounds, so later flows are unaffected.
 export const INITIAL_CENTER: [number, number] = [100.53, 13.745];
-export const INITIAL_ZOOM = 11.4;
+export const INITIAL_ZOOM = 10;

@@ -161,6 +161,39 @@
   --color-vision-viridis-4: #5ec962; /* t=0.75 · green              */
   --color-vision-viridis-5: #fde725; /* t=1.00 · yellow      · high */
 
+  /* Gray (Monochrome) ramp — 5 evenly-spaced achromatic samples, lightness
+     strictly increasing 1 → 5 (grayscale-safe by construction). Contrast on
+     white: g1 16.7:1 · g2 8.3:1 · g3 3.9:1; on the dark basemap (#1F1F1F):
+     g5 13.7:1 · g4 7.7:1 · g3 4.0:1 — every assigned role meets WCAG 1.4.11
+     (≥3:1 non-text) in its theme. */
+  --color-vision-gray-1: #1a1a1a; /* low  · darkest  */
+  --color-vision-gray-2: #4d4d4d;
+  --color-vision-gray-3: #808080;
+  --color-vision-gray-4: #b3b3b3;
+  --color-vision-gray-5: #ececec; /* high · lightest */
+
+  /* CATEGORICAL palettes (6 classes) for the six Thai regions. These are
+     DISCRETE CATEGORY IDENTIFIERS — not a sequential encoding: the mapping is
+     fixed by region identity (declaration order of REGION_TOKEN_VAR), never by
+     value/count, so a region's colour can never change because its total grew.
+     Viridis 6-class = canonical matplotlib viridis sampled at t = 0, 0.2, 0.4,
+     0.6, 0.8, 1.0 (standard discrete classing of the colormap). */
+  --color-vision-viridis-cat-1: #440154; /* t=0.0 */
+  --color-vision-viridis-cat-2: #414487; /* t=0.2 */
+  --color-vision-viridis-cat-3: #2a788e; /* t=0.4 */
+  --color-vision-viridis-cat-4: #22a884; /* t=0.6 */
+  --color-vision-viridis-cat-5: #7ad151; /* t=0.8 */
+  --color-vision-viridis-cat-6: #fde725; /* t=1.0 */
+  /* Gray 6-class — achromatic, luminance strictly increasing, evenly spaced
+     (Δ≈43/255) so neighbouring classes stay distinguishable; region outlines +
+     count labels carry separation at the ramp extremes on each basemap. */
+  --color-vision-gray-cat-1: #1a1a1a;
+  --color-vision-gray-cat-2: #454545;
+  --color-vision-gray-cat-3: #6e6e6e;
+  --color-vision-gray-cat-4: #969696;
+  --color-vision-gray-cat-5: #c0c0c0;
+  --color-vision-gray-cat-6: #e8e8e8;
+
   /* DATA-VISUALIZATION ROLES — the single indirection every data colour goes
      through (map paint via lib/map-tokens, chart fills, legend swatches,
      compare sides). In DEFAULT mode each role aliases the EXACT existing
@@ -180,6 +213,18 @@
   --color-data-admin-outline: var(--data-viz-admin-outline, var(--color-border-primary-default));
   --color-data-admin-area: var(--data-viz-admin-area, var(--color-background-primary-default));
   --color-data-hospital-highlight: var(--data-viz-hospital-highlight, var(--color-background-error-default));
+
+  /* CATEGORICAL region roles — one stable role per Thai region (map fills,
+     chart bars, legend swatches all read the same six). Default aliases the
+     EXACT existing per-region tokens (bit-identical rendering); the
+     colour-vision palettes override them with the 6-class categorical samples
+     above. Category identity, never magnitude. */
+  --color-data-region-central: var(--data-viz-region-central, var(--color-background-primary-default));
+  --color-data-region-north: var(--data-viz-region-north, var(--color-background-success-default));
+  --color-data-region-northeast: var(--data-viz-region-northeast, var(--color-background-secondary-default));
+  --color-data-region-south: var(--data-viz-region-south, var(--color-background-error-default));
+  --color-data-region-east: var(--data-viz-region-east, var(--color-background-info-default));
+  --color-data-region-west: var(--data-viz-region-west, var(--color-background-warning-default));
 }
 
 html,
@@ -231,6 +276,14 @@ a {
        the default red is bit-identical; the semantic token itself is never
        touched. */
     --data-viz-hospital-highlight: var(--color-background-error-default);
+    /* Categorical region roles — default = the exact existing region tokens
+       (same mapping REGION_TOKEN_VAR has always used). */
+    --data-viz-region-central: var(--color-background-primary-default);
+    --data-viz-region-north: var(--color-background-success-default);
+    --data-viz-region-northeast: var(--color-background-secondary-default);
+    --data-viz-region-south: var(--color-background-error-default);
+    --data-viz-region-east: var(--color-background-info-default);
+    --data-viz-region-west: var(--color-background-warning-default);
   }
 
   /* ── Viridis overrides (data-visualization roles ONLY) ───────────────────
@@ -253,6 +306,15 @@ a {
     --data-viz-admin-outline: var(--color-vision-viridis-1); /* 14.2:1 light */
     --data-viz-admin-area: var(--color-vision-viridis-2); /* 7.1:1 light */
     --data-viz-hospital-highlight: var(--color-vision-viridis-1);
+    /* Six regions → six DISCRETE Viridis classes, fixed by identity (the
+       REGION_TOKEN_VAR declaration order) — never by count. Theme-invariant:
+       identity colours stay the same in light and dark. */
+    --data-viz-region-central: var(--color-vision-viridis-cat-1);
+    --data-viz-region-north: var(--color-vision-viridis-cat-2);
+    --data-viz-region-northeast: var(--color-vision-viridis-cat-3);
+    --data-viz-region-south: var(--color-vision-viridis-cat-4);
+    --data-viz-region-east: var(--color-vision-viridis-cat-5);
+    --data-viz-region-west: var(--color-vision-viridis-cat-6);
   }
   :root[data-color-vision="viridis"].dark {
     --data-viz-hospitals: var(--color-vision-viridis-5); /* 15.0:1 on dark */
@@ -268,6 +330,51 @@ a {
     --data-viz-admin-outline: var(--color-vision-viridis-5); /* 15.0:1 dark */
     --data-viz-admin-area: var(--color-vision-viridis-3); /* 5.0:1 dark */
     --data-viz-hospital-highlight: var(--color-vision-viridis-5);
+  }
+
+  /* ── Gray / Monochrome overrides (data-visualization roles ONLY) ─────────
+     Same theme-aware assignment scheme as Viridis: the light basemap uses the
+     DARK end of the gray ramp, the dark basemap the LIGHT end. Compare sides
+     pair widely separated tones (light g3↔g1 4.5:1; dark g3↔g5 3.3:1) so
+     side-by-side datasets stay distinguishable without hue. */
+  :root[data-color-vision="gray"] {
+    --data-viz-hospitals: var(--color-vision-gray-1); /* 16.7:1 on light */
+    --data-viz-flood: var(--color-vision-gray-2); /* 8.3:1 on light */
+    --data-viz-analysis: var(--color-vision-gray-3); /* 3.9:1 on light */
+    --data-viz-compare-a: var(--color-vision-gray-3);
+    --data-viz-compare-b: var(--color-vision-gray-1); /* A↔B 4.5:1 */
+    --data-viz-series-1: var(--color-vision-gray-1);
+    --data-viz-series-2: var(--color-vision-gray-2);
+    --data-viz-series-3: var(--color-vision-gray-3);
+    --data-viz-series-4: var(--color-vision-gray-4);
+    --data-viz-admin-fill: var(--color-vision-gray-3);
+    --data-viz-admin-outline: var(--color-vision-gray-1); /* 16.7:1 light */
+    --data-viz-admin-area: var(--color-vision-gray-2); /* 8.3:1 light */
+    --data-viz-hospital-highlight: var(--color-vision-gray-1);
+    /* Six regions → six spaced grayscale classes, fixed by identity (same
+       order as Viridis). Theme-invariant; outlines + count labels keep the
+       ramp extremes separated from each basemap. */
+    --data-viz-region-central: var(--color-vision-gray-cat-1);
+    --data-viz-region-north: var(--color-vision-gray-cat-2);
+    --data-viz-region-northeast: var(--color-vision-gray-cat-3);
+    --data-viz-region-south: var(--color-vision-gray-cat-4);
+    --data-viz-region-east: var(--color-vision-gray-cat-5);
+    --data-viz-region-west: var(--color-vision-gray-cat-6);
+  }
+  :root[data-color-vision="gray"].dark {
+    --data-viz-hospitals: var(--color-vision-gray-5); /* 13.7:1 on dark */
+    --data-viz-flood: var(--color-vision-gray-3); /* 4.0:1 on dark */
+    --data-viz-analysis: var(--color-vision-gray-4); /* 7.7:1 on dark */
+    --data-viz-compare-a: var(--color-vision-gray-3);
+    --data-viz-compare-b: var(--color-vision-gray-5); /* A↔B 3.3:1 */
+    --data-viz-series-1: var(--color-vision-gray-5);
+    --data-viz-series-2: var(--color-vision-gray-4);
+    --data-viz-series-3: var(--color-vision-gray-3);
+    --data-viz-series-4: var(--color-vision-gray-2);
+    --data-viz-admin-fill: var(--color-vision-gray-3);
+    --data-viz-admin-outline: var(--color-vision-gray-5); /* 13.7:1 dark */
+    --data-viz-admin-area: var(--color-vision-gray-3); /* 4.0:1 dark */
+    --data-viz-hospital-highlight: var(--color-vision-gray-5);
   }
 
   :root {

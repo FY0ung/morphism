@@ -2,9 +2,8 @@
 // component so the information architecture is unit-testable:
 //   • Theme = APPEARANCE only (dark/light). Colour-vision palettes are a
 //     SEPARATE preference (ColorVisionMode) — never a theme value.
-//   • Colour-vision: "default" is the existing palette and the only enabled
-//     option; "viridis"/"blues" are visible but disabled until their token
-//     sets exist.
+//   • Colour-vision: all three palettes ship — "default" (the existing
+//     tokens), "viridis" (CVD-safe) and "gray" (monochrome).
 import type { ColorVisionMode } from "@/types";
 
 /** Appearance themes — dark/light ONLY (next-themes values). */
@@ -50,12 +49,29 @@ export const COLOR_VISION_OPTIONS: {
     disabled: false,
   },
   {
-    value: "blues",
-    labelKey: "morphism.colorVision.blues",
-    descKey: "morphism.colorVision.bluesDesc",
-    disabled: true,
+    value: "gray",
+    labelKey: "morphism.colorVision.gray",
+    descKey: "morphism.colorVision.grayDesc",
+    // ENABLED — the Gray (monochrome) data-palette tokens ship (globals.css).
+    disabled: false,
   },
 ];
+
+/**
+ * Normalize a PERSISTED colour-vision value. The retired planned mode
+ * "blues" (never shipped) maps to its replacement "gray", so older saved
+ * preferences keep working; anything unknown falls back to `fallback`.
+ */
+export function normalizeColorVision(
+  value: unknown,
+  fallback: ColorVisionMode = DEFAULT_COLOR_VISION,
+): ColorVisionMode {
+  if (value === "default" || value === "viridis" || value === "gray") {
+    return value;
+  }
+  if (value === "blues") return "gray"; // legacy planned mode → its successor
+  return fallback;
+}
 
 /**
  * Apply a colour-vision selection: a DISABLED option can never change the

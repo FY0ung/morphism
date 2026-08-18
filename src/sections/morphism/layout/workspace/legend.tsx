@@ -42,6 +42,10 @@ interface Props {
   /** Active 5 km flood-proximity analysis (real server-side result): the
    *  RESOLVED snapshot date label + whether that snapshot is partial. */
   floodBuffer?: { dateLabel: string; partial: boolean } | null;
+  /** Initial DEFAULT map context (newest flood snapshot shown on open) — the
+   *  legend shows a plain "Flood areas" row (the time pill carries the date);
+   *  scenario branches take precedence. */
+  floodContext?: boolean;
   /** MOBILE: true while the bottom sheet is being dragged — the offset then
    *  tracks the sheet every frame instead of easing (desktop: always false). */
   sheetDragging?: boolean;
@@ -63,6 +67,7 @@ export default function Legend({
   floodDateLabel,
   floodPartial,
   floodBuffer,
+  floodContext,
   sheetDragging,
 }: Props) {
   const { t } = useTranslation();
@@ -170,6 +175,20 @@ export default function Legend({
               {t("morphism.legend.floodSample")}
             </li>
           )}
+        </ul>
+      ) : floodContext ? (
+        /* Initial DEFAULT context row — plain "Flood areas" (the dated pill
+           already states WHICH snapshot). Same palette-aware flood swatch as
+           every other flood row (Default/Viridis/Gray + both themes via the
+           data-role variable — no bespoke colour). */
+        <ul className="flex flex-col gap-1">
+          <li className="flex items-center gap-2 text-xs text-text-default-default">
+            <span
+              className="size-3 flex-none rounded-sm bg-data-flood"
+              aria-hidden
+            />
+            {t("morphism.layer.flood")}
+          </li>
         </ul>
       ) : floodDateLabel ? (
         <ul className="flex flex-col gap-1">

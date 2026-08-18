@@ -35,9 +35,14 @@ export function run(): void {
   assert.deepEqual(ay.provinceNames, ["พระนครศรีอยุธยา"]);
 
   // ── 5 km flood proximity → REAL runtime analysis (no baked date/count) ──
+  // Includes the "last week's" and "latest available" phrasings: BOTH route to
+  // the SAME buffer scenario whose date is resolved by the SERVER from the
+  // dataset registry — never from the calendar or a requested period.
   for (const q of [
     "โรงพยาบาลภายในรัศมี 5 กม. จากพื้นที่น้ำท่วม",
     "Hospitals within 5 km of flood areas",
+    "Hospitals within 5 kilometers of last week's flood.",
+    "Hospitals within 5 km of the latest available flood areas",
   ]) {
     const buf = resolveScenario(q, t, "en");
     assert.equal(buf.id, "buffer5km");

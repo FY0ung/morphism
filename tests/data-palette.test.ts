@@ -178,4 +178,66 @@ export function run(): void {
   for (let i = 1; i < lums.length; i++) {
     assert.ok(lums[i] > lums[i - 1], "viridis lightness strictly increases");
   }
+
+  // ── Gray (Monochrome) palette — additive, same architecture as Viridis ───
+  const GRAY = {
+    "--color-vision-gray-1": "#1a1a1a",
+    "--color-vision-gray-2": "#4d4d4d",
+    "--color-vision-gray-3": "#808080",
+    "--color-vision-gray-4": "#b3b3b3",
+    "--color-vision-gray-5": "#ececec",
+  } as const;
+  for (const [name, hex] of Object.entries(GRAY)) {
+    const d = defs(name);
+    assert.equal(d.length, 1, `${name} defined exactly once`);
+    assert.equal(d[0].toLowerCase(), hex, `${name} is the canonical sample`);
+    // Achromatic by construction (R = G = B).
+    assert.ok(
+      hex.slice(1, 3) === hex.slice(3, 5) && hex.slice(3, 5) === hex.slice(5, 7),
+      `${name} is a true gray`,
+    );
+  }
+  // Strictly increasing lightness 1 → 5.
+  const grayLums = Object.values(GRAY).map(relLuminance);
+  for (let i = 1; i < grayLums.length; i++) {
+    assert.ok(grayLums[i] > grayLums[i - 1], "gray lightness strictly increases");
+  }
+
+  // Light + dark gray override blocks resolve the SAME roles Viridis does.
+  const grayLightStart = css.indexOf(':root[data-color-vision="gray"] {');
+  const grayDarkStart = css.indexOf(':root[data-color-vision="gray"].dark');
+  assert.ok(grayLightStart > 0 && grayDarkStart > grayLightStart);
+  const grayLight = css.slice(grayLightStart, grayDarkStart);
+  const grayDark = css.slice(grayDarkStart);
+  const inGray = (block: string, role: string, grayVar: string) =>
+    new RegExp(`${role}\\s*:\\s*var\\(${grayVar}\\)`).test(block);
+  // Light theme: dark end of the ramp (≥3:1 on the light basemap).
+  assert.ok(inGray(grayLight, "--data-viz-hospitals", "--color-vision-gray-1"));
+  assert.ok(inGray(grayLight, "--data-viz-flood", "--color-vision-gray-2"));
+  assert.ok(inGray(grayLight, "--data-viz-analysis", "--color-vision-gray-3"));
+  assert.ok(inGray(grayLight, "--data-viz-compare-a", "--color-vision-gray-3"));
+  assert.ok(inGray(grayLight, "--data-viz-compare-b", "--color-vision-gray-1"));
+  assert.ok(inGray(grayLight, "--data-viz-admin-outline", "--color-vision-gray-1"));
+  assert.ok(inGray(grayLight, "--data-viz-admin-area", "--color-vision-gray-2"));
+  assert.ok(inGray(grayLight, "--data-viz-hospital-highlight", "--color-vision-gray-1"));
+  // Dark theme: light end of the ramp.
+  assert.ok(inGray(grayDark, "--data-viz-hospitals", "--color-vision-gray-5"));
+  assert.ok(inGray(grayDark, "--data-viz-flood", "--color-vision-gray-3"));
+  assert.ok(inGray(grayDark, "--data-viz-analysis", "--color-vision-gray-4"));
+  assert.ok(inGray(grayDark, "--data-viz-compare-a", "--color-vision-gray-3"));
+  assert.ok(inGray(grayDark, "--data-viz-compare-b", "--color-vision-gray-5"));
+  assert.ok(inGray(grayDark, "--data-viz-hospital-highlight", "--color-vision-gray-5"));
+
+  // Compared datasets stay distinguishable WITHOUT hue (≥3:1 both themes),
+  // and each theme's fills clear WCAG 1.4.11 against its basemap.
+  const white = "#ffffff";
+  const darkBg = "#1f1f1f";
+  assert.ok(contrast(GRAY["--color-vision-gray-3"], GRAY["--color-vision-gray-1"]) >= 3, "light compare pair g3↔g1 ≥ 3:1");
+  assert.ok(contrast(GRAY["--color-vision-gray-3"], GRAY["--color-vision-gray-5"]) >= 3, "dark compare pair g3↔g5 ≥ 3:1");
+  for (const g of ["--color-vision-gray-1", "--color-vision-gray-2", "--color-vision-gray-3"] as const) {
+    assert.ok(contrast(GRAY[g], white) >= 3, `${g} ≥ 3:1 on the light basemap`);
+  }
+  for (const g of ["--color-vision-gray-3", "--color-vision-gray-4", "--color-vision-gray-5"] as const) {
+    assert.ok(contrast(GRAY[g], darkBg) >= 3, `${g} ≥ 3:1 on the dark basemap`);
+  }
 }

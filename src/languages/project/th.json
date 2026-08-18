@@ -19,6 +19,7 @@
     "mapAria": "แผนที่ประเทศไทย",
     "attributionAria": "แหล่งที่มาข้อมูลแผนที่",
     "timeAll": "ข้อมูลทั้งหมด (ไม่กรองเวลา)",
+    "timeSnapshot": "{{date}}",
     "clearTime": "ล้างตัวกรองเวลา",
     "context": "AI เห็น: {{layers}} ชั้น · zoom {{zoom}}",
     "layersTitle": "ชั้นข้อมูล",
@@ -85,8 +86,8 @@
       "default": "ค่าเริ่มต้น",
       "viridis": "Viridis",
       "viridisDesc": "รองรับผู้มีภาวะตาบอดสี",
-      "blues": "Blues",
-      "bluesDesc": "สีเดียว",
+      "gray": "Gray",
+      "grayDesc": "Gray (Monochrome)",
       "comingSoon": "เร็ว ๆ นี้"
     },
     "dir": {
@@ -142,6 +143,11 @@
     "scenario": {
       "place": {
         "currentArea": "พื้นที่ที่แสดงอยู่"
+      },
+      "foss4g": {
+        "intro": "มาพบกันที่ FOSS4G Hiroshima!",
+        "join": "เข้าร่วมเซสชันของเรา:",
+        "title": "Designing Web Map Experiences Beyond Too Much Data and Too Little Time with Intelligent AI Processing"
       },
       "steps": {
         "catalog": "search_catalog('hospital') → OpenStreetMap"

@@ -1,11 +1,13 @@
 // Settings-popover information architecture (configs/settings + locale
-// resources): Theme = appearance only; Color Blindness is its own section
-// with one enabled option (Default) and two disabled ones (Viridis/Blues).
+// resources): Theme = appearance only; Color Blindness is its own section with
+// THREE fully enabled palettes — Default / Viridis / Gray — plus safe
+// normalization of the legacy planned "blues" value to "gray".
 import assert from "node:assert/strict";
 import {
   COLOR_VISION_OPTIONS,
   DEFAULT_COLOR_VISION,
   THEME_OPTIONS,
+  normalizeColorVision,
   selectColorVision,
 } from "@/configs/settings";
 import type { ColorVisionMode } from "@/types";
@@ -23,14 +25,17 @@ export function run(): void {
   // No colour-vision value may ever be modelled as a theme.
   for (const o of THEME_OPTIONS) {
     assert.ok(
-      !["colorblind", "viridis", "blues", "color-blindness"].includes(o.value),
+      !["colorblind", "viridis", "gray", "blues", "color-blindness"].includes(
+        o.value,
+      ),
     );
   }
 
-  // ── 2–5. Colour-vision section: order + enabled/disabled states ──────────
+  // ── 2–5. Colour-vision section: order + ALL options enabled ─────────────
   assert.deepEqual(
     COLOR_VISION_OPTIONS.map((o) => o.value),
-    ["default", "viridis", "blues"],
+    ["default", "viridis", "gray"],
+    "options are Default / Viridis / Gray (Blues fully replaced)",
   );
   assert.equal(DEFAULT_COLOR_VISION, "default");
   const byValue = Object.fromEntries(
@@ -38,27 +43,35 @@ export function run(): void {
   );
   assert.equal(byValue.default.disabled, false, "Default must be enabled");
   assert.equal(byValue.viridis.disabled, false, "Viridis must be ENABLED");
-  assert.equal(byValue.blues.disabled, true, "Blues must be disabled");
+  assert.equal(byValue.gray.disabled, false, "Gray must be ENABLED");
 
-  // ── 6. Selection rules: Viridis selectable; Blues (disabled) never is ───
+  // ── 6. Selection rules: every shipped palette selectable + restorable ────
   assert.equal(selectColorVision("default", "viridis"), "viridis");
-  assert.equal(selectColorVision("viridis", "default"), "default"); // exact restore path
-  assert.equal(selectColorVision("default", "blues"), "default");
-  assert.equal(selectColorVision("viridis", "blues"), "viridis");
+  assert.equal(selectColorVision("viridis", "default"), "default");
+  assert.equal(selectColorVision("default", "gray"), "gray");
+  assert.equal(selectColorVision("gray", "viridis"), "viridis");
+  assert.equal(selectColorVision("gray", "default"), "default"); // restore path
   assert.equal(selectColorVision("default", "default"), "default");
-  // Unknown values are rejected too (stale/foreign persisted values).
+  // Unknown values are rejected (stale/foreign persisted values).
   assert.equal(
     selectColorVision("default", "sepia" as ColorVisionMode),
     "default",
   );
 
+  // ── Legacy persistence: "blues" (planned, never shipped) → "gray" ────────
+  assert.equal(normalizeColorVision("gray"), "gray");
+  assert.equal(normalizeColorVision("viridis"), "viridis");
+  assert.equal(normalizeColorVision("default"), "default");
+  assert.equal(normalizeColorVision("blues"), "gray", "legacy blues → gray");
+  assert.equal(normalizeColorVision("sepia"), "default");
+  assert.equal(normalizeColorVision(undefined), "default");
+  assert.equal(normalizeColorVision(null), "default");
+  assert.equal(normalizeColorVision(42), "default");
+
   // ── 7. Palette mode lives OUTSIDE the theme model (structural) ───────────
-  // selectColorVision never returns a theme value, and THEME_OPTIONS carries
-  // no palette entries (asserted above) — switching dark/light goes through
-  // next-themes and cannot touch ColorVisionMode state.
-  for (const v of ["default", "viridis", "blues"] as ColorVisionMode[]) {
+  for (const v of ["default", "viridis", "gray"] as ColorVisionMode[]) {
     const r = selectColorVision(DEFAULT_COLOR_VISION, v);
-    assert.ok(["default", "viridis", "blues"].includes(r));
+    assert.ok(["default", "viridis", "gray"].includes(r));
   }
 
   // ── Segmented control contract: SHORT in-segment labels (no wrapping) +
@@ -78,26 +91,37 @@ export function run(): void {
       "default",
       "viridis",
       "viridisDesc",
-      "blues",
-      "bluesDesc",
-      "comingSoon",
+      "gray",
+      "grayDesc",
     ]) {
       assert.ok(
         typeof cv?.[key] === "string" && cv[key].length > 0,
         `${name}: morphism.colorVision.${key} missing`,
       );
     }
+    // No "Blues" remnants anywhere in the section (labels, descs, aria).
+    assert.equal(cv.blues, undefined, `${name}: blues key removed`);
+    assert.equal(cv.bluesDesc, undefined, `${name}: bluesDesc key removed`);
+    for (const v of Object.values(cv)) {
+      assert.ok(!/blues/i.test(v), `${name}: no "Blues" text remains ("${v}")`);
+    }
     // Palette NAMES stay recognizable across locales — and the visible
     // segment labels stay SHORT (exact names, no parenthetical descriptions
     // that would wrap or clip inside the segmented control).
     assert.equal(cv.viridis, "Viridis", `${name}: short Viridis segment label`);
-    assert.equal(cv.blues, "Blues", `${name}: short Blues segment label`);
-    for (const key of ["default", "viridis", "blues"]) {
+    assert.equal(cv.gray, "Gray", `${name}: short Gray segment label`);
+    for (const key of ["default", "viridis", "gray"]) {
       assert.ok(
         cv[key].length <= 12 && !cv[key].includes("("),
         `${name}: ${key} label short enough for a segment ("${cv[key]}")`,
       );
     }
+    // The LONG description carries the "(Monochrome)" qualifier.
+    assert.ok(
+      cv.grayDesc.includes("Gray") &&
+        (cv.grayDesc.includes("Monochrome") || cv.grayDesc.includes("モノクロ")),
+      `${name}: grayDesc is the long "Gray (Monochrome)" form`,
+    );
     // Theme section: appearance keys only — the old colour-blindness card
     // keys must be gone.
     const theme = (res as typeof en).morphism.theme as Record<string, string>;
@@ -111,6 +135,5 @@ export function run(): void {
   assert.equal(ja.morphism.colorVision.title, "色覚サポート");
   assert.equal(th.morphism.colorVision.default, "ค่าเริ่มต้น");
   assert.equal(ja.morphism.colorVision.default, "デフォルト");
-  assert.notEqual(th.morphism.colorVision.comingSoon, en.morphism.colorVision.comingSoon);
-  assert.notEqual(ja.morphism.colorVision.comingSoon, en.morphism.colorVision.comingSoon);
+  assert.equal(ja.morphism.colorVision.grayDesc, "Gray（モノクロ）");
 }

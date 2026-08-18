@@ -19,6 +19,7 @@
     "mapAria": "Map of Thailand",
     "attributionAria": "Map data sources",
     "timeAll": "All data (no time filter)",
+    "timeSnapshot": "{{date}}",
     "clearTime": "Clear time filter",
     "context": "AI sees: {{layers}} layers · zoom {{zoom}}",
     "layersTitle": "Data layers",
@@ -85,8 +86,8 @@
       "default": "Default",
       "viridis": "Viridis",
       "viridisDesc": "CVD-safe",
-      "blues": "Blues",
-      "bluesDesc": "Monochrome",
+      "gray": "Gray",
+      "grayDesc": "Gray (Monochrome)",
       "comingSoon": "Coming Soon"
     },
     "dir": {
@@ -142,6 +143,11 @@
     "scenario": {
       "place": {
         "currentArea": "the current area"
+      },
+      "foss4g": {
+        "intro": "Come meet us at FOSS4G Hiroshima!",
+        "join": "Join our session:",
+        "title": "Designing Web Map Experiences Beyond Too Much Data and Too Little Time with Intelligent AI Processing"
       },
       "steps": {
         "catalog": "search_catalog('hospital') → OpenStreetMap"

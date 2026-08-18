@@ -139,11 +139,46 @@ lib/data-palette is the one place that branches on the mode).
 - On a full page reload with Viridis persisted there is a sub-frame window
   before the client attribute applies (SSR renders no attribute).
 
-## 7 · Future work — Blues
+## 6b · Categorical region palette (six Thai regions)
 
-Blues (single-hue monochrome ramp) needs: canonical sample selection (e.g.
-ColorBrewer `Blues` 5-class), the same theme-aware contrast analysis (a
-light-end blue fails on light basemaps), a conflict review against the
-default flood blue and compare-side blues (likely requiring outline/dash
-differentiation rather than hue), role overrides in globals.css +
-`COLOR_VISION_OPTIONS` enablement, and the same test/browser matrix.
+The six regions are **categories**, not a sequence — so in Viridis/Gray they
+use discrete palette samples strictly as **category identifiers**: the mapping
+is fixed by region identity (the `REGION_TOKEN_VAR` declaration order), never
+by hospital count or any other magnitude, and never reordered when data
+changes. Bar LENGTH encodes magnitude; colour encodes identity only.
+
+Roles: `--color-data-region-{central,north,northeast,south,east,west}`.
+Default aliases the exact original tokens (primary / success / secondary /
+error / info / warning — bit-identical rendering). Overrides:
+
+| Region    | Role key  | Viridis (6-class, t=0…1)   | Gray          |
+| --------- | --------- | -------------------------- | ------------- |
+| กลาง      | central   | `#440154` (t=0.0)          | `#1a1a1a`     |
+| เหนือ     | north     | `#414487` (t=0.2)          | `#454545`     |
+| อีสาน     | northeast | `#2a788e` (t=0.4)          | `#6e6e6e`     |
+| ใต้       | south     | `#22a884` (t=0.6)          | `#969696`     |
+| ตะวันออก  | east      | `#7ad151` (t=0.8)          | `#c0c0c0`     |
+| ตะวันตก   | west      | `#fde725` (t=1.0)          | `#e8e8e8`     |
+
+Both palettes are theme-invariant (identity colours don't flip between light
+and dark); at the ramp extremes the region outlines + count labels carry the
+separation from the basemap. Map fills (`REGION_TOKEN_VAR`), chart bars
+(`REGION_FILL`) and legend swatches (`REGION_BG`) all resolve from these same
+six roles, and multi-region boundary draws (nationwide / region-compare) use
+the categorical path — only a single-selection highlight routes through the
+sequential `admin-area` role.
+
+## 7 · Gray (Monochrome)
+
+The third palette shipped as **Gray** (replacing the originally planned
+single-hue "Blues", which conflicted with the default flood blue and the
+compare-side blues). Same architecture as Viridis — additive tokens
+`--color-vision-gray-1…5` (achromatic, lightness strictly increasing
+`#1a1a1a → #4d4d4d → #808080 → #b3b3b3 → #ececec`) plus
+`:root[data-color-vision="gray"]` / `…"gray"].dark` role overrides in
+globals.css. Theme-aware assignment mirrors Viridis: light basemap uses the
+dark end (g1 16.7:1 · g2 8.3:1 · g3 3.9:1 on white), dark basemap the light
+end (g5 13.7:1 · g4 7.7:1 · g3 4.0:1 on #1F1F1F). Compare sides pair
+g3↔g1 (4.5:1) in light and g3↔g5 (3.3:1) in dark, so side-by-side datasets
+remain distinguishable without hue. Legacy persisted `"blues"` values are
+normalized to `"gray"` on restore (`normalizeColorVision`).
