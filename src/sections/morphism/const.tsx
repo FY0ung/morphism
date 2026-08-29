@@ -72,6 +72,10 @@ export {
   provinceRegion,
 };
 import { CAMERA } from "@/configs/motion";
+import {
+  matchKnowledgeTopic,
+  type KnowledgeTopic,
+} from "@/configs/presentation-knowledge";
 import type { TFunction } from "@/languages/types";
 import { normalizeProvinceName } from "@/lib/geo";
 import { totalOfCounts, type ProvinceCounts } from "@/lib/hospital-stats";
@@ -1225,6 +1229,22 @@ const scnUnknown = (t: TFunction): Scenario => {
   };
 };
 
+/** Presentation-knowledge answer (FOSS4G 2026): a plain explanation about the
+ *  project itself. Behaves exactly like `scnUnknown` towards the map — no
+ *  layers, no camera move, no tool steps — only the message differs.
+ *  Facts: docs/presentation-knowledge.md (verified). */
+const scnKnowledge = (topic: KnowledgeTopic, t: TFunction): Scenario => {
+  const message = t(topic.msgKey);
+  return {
+    id: `knowledge-${topic.id}`,
+    mode: "unknown",
+    layers: [],
+    interim: message,
+    steps: [],
+    result: message,
+  };
+};
+
 /** Detect a region keyword in the query. */
 function detectRegion(t: string): string | null {
   if (has(t, "อีสาน", "ตะวันออกเฉียงเหนือ")) return "อีสาน";
@@ -1276,6 +1296,14 @@ export function resolveScenario(
   // Normalise the query (NFKC folds full-width → half-width, then lowercase) so
   // Latin, Thai and Japanese aliases all match — see configs/intent-keywords.ts.
   const q = normalizeQuery(raw);
+
+  // Presentation-knowledge questions ("What is Morphism?", "Is the flood data
+  // live?") answer from the verified FOSS4G knowledge base and must NOT run any
+  // map analysis — checked before the geo intents because some meta-questions
+  // mention "flood"/"hospital" terms. Patterns are strict full phrases so demo
+  // queries and suggestion chips can never land here.
+  const kbTopic = matchKnowledgeTopic(q);
+  if (kbTopic) return scnKnowledge(kbTopic, t);
   const isCompare = has(q, ...COMPARE_TERMS);
   const countIntent = has(q, ...COUNT_TERMS);
   const isNation = has(q, ...NATION_TERMS);

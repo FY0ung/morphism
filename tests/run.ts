@@ -21,6 +21,7 @@ import { run as floodCompareChart } from "./flood-compare-chart.test";
 import { run as mobileSheet } from "./mobile-sheet.test";
 import { run as japaneseIntent } from "./japanese-intent.test";
 import { run as foss4gPrompt } from "./foss4g-prompt.test";
+import { run as presentationKnowledge } from "./presentation-knowledge.test";
 import { run as i18n } from "./i18n.test";
 
 // Suites may be sync or async (flood-proximity awaits dataset resolution).
@@ -41,6 +42,7 @@ const suites: [string, () => void | Promise<void>][] = [
   ["mobile-sheet", mobileSheet],
   ["japanese-intent", japaneseIntent],
   ["foss4g-prompt", foss4gPrompt],
+  ["presentation-knowledge", presentationKnowledge],
   ["i18n", i18n],
 ];
 
