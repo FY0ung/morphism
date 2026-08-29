@@ -1,114 +1,121 @@
-# การวิเคราะห์ "โรงพยาบาลภายในรัศมี 5 กม. จากพื้นที่น้ำท่วม"
+# "Hospitals within a 5 km radius of flood areas" — how it is actually computed
 
-เอกสารนี้อธิบาย **การคำนวณจริง** ที่โค้ดปัจจุบันใช้ (สาขา
-`feature/real-flood-hospital-buffer`) ไม่ใช่คำอธิบาย GIS แบบทั่วไป
-เขียนขึ้นเพื่อให้ดีไซเนอร์ นักพัฒนา ผู้นำเสนอ และผู้ฟังเชิงเทคนิค
-เข้าใจและตอบคำถามได้ว่า "ผลลัพธ์ถูกคำนวณมาอย่างไร"
+This document describes the **actual calculation performed by the current code on
+`main`**, not a generic GIS explanation. It is written so designers, developers,
+presenters and technical audiences can understand and answer the question
+"how was this result computed?"
 
-> อ้างอิงโค้ดหลัก: `src/lib/flood-radius-analysis.ts`,
+> Primary code references: `src/lib/flood-radius-analysis.ts`,
 > `src/lib/flood-proximity.ts`, `src/app/api/flood-buffer/route.ts`,
 > `src/sections/morphism/view/morphism-view.tsx`
 
 ---
 
-## Purpose — ความหมายของคำถาม
+## Purpose — what the question means
 
-คำถาม **"โรงพยาบาลภายในรัศมี 5 กม. จากพื้นที่น้ำท่วม"**
-ในเดโมนี้ **ไม่ได้** หมายถึงการสร้าง buffer เชิงสัณฐาน (morphological buffer)
-รอบ *ทุก* ขอบพอลิกอนน้ำท่วมแล้วหาโรงพยาบาลที่ตกในแถบนั้น
+In this demo, **"hospitals within a 5 km radius of flood areas"** does **not** mean
+building a morphological buffer around *every* flood-polygon edge and then finding the
+hospitals that fall inside that band.
 
-สิ่งที่เดโมทำจริงคือ **แบบจำลองรัศมีวงกลม (circular analysis-radius model)**:
+What the demo actually does is a **circular analysis-radius model**:
 
-1. เลือก **กลุ่มพื้นที่น้ำท่วมหลัก (flood cluster)** จากสแนปช็อตจริง
-2. คำนวณ **จุดศูนย์กลางวิเคราะห์ (analysis center)** หนึ่งจุด เป็นตัวแทนของกลุ่มนั้น
-3. สร้าง **วงกลม geodesic รัศมี 5 กม.** รอบจุดศูนย์กลางนั้น
-4. นับเฉพาะโรงพยาบาลที่อยู่ **ภายในวงกลมเดียวกัน**
+1. Select the **main flood cluster** from a real snapshot
+2. Compute one **analysis center** representing that cluster
+3. Build a **geodesic circle with a 5 km radius** around that center
+4. Count only the hospitals **inside that same circle**
 
-กล่าวคือ ระยะทางถูกวัดจาก **จุดศูนย์กลางกลุ่มน้ำท่วม** ไม่ใช่จากขอบพอลิกอนน้ำท่วมแต่ละชิ้น
-วงกลมที่แสดงบนแผนที่คือ *ขอบเขตการวิเคราะห์* และเป็นเรขาคณิตชุดเดียวกับที่ใช้กรองโรงพยาบาล
+In other words, distance is measured from the **center of the flood cluster**, not from
+the edge of each individual flood polygon. The circle drawn on the map *is* the analysis
+boundary, and it is the same geometry used to filter hospitals.
 
-> ⚠️ **อย่าอธิบายผิด** ว่าเป็น "buffer 5 กม. รอบทุกพอลิกอนน้ำท่วม" — ดูหัวข้อ
-> [ความต่างระหว่างวงกลมวิเคราะห์กับ polygon buffer](#difference--ความต่างระหว่างวงกลมวิเคราะห์กับ-polygon-buffer)
+> ⚠️ **Do not describe this incorrectly** as "a 5 km buffer around every flood polygon" —
+> see [Difference — analysis circle vs polygon buffer](#difference--analysis-circle-vs-polygon-buffer)
 
 ---
 
-## Input data — ข้อมูลนำเข้า
+## Input data
 
-| รายการ | ค่าจริงในเดโม |
+| Item | Actual value in the demo |
 | --- | --- |
-| วันที่สแนปช็อตน้ำท่วม | **18 ธันวาคม 2025** (`2025-12-18`) |
-| แหล่งเรขาคณิตน้ำท่วม | สแนปช็อต SAR จริง (GISTDA/Vallaris) — ไฟล์ acquisition `S1A_20251218_0603, S1A_20251218_1829` เก็บเป็น `detail.json.gz` (พอลิกอน/มัลติพอลิกอน) |
-| ชุดข้อมูลจุดโรงพยาบาล | `public/data/hospitals.geojson` — จุดโรงพยาบาลรัฐจริง (10k+ จุดทั่วประเทศ) |
-| ระบบพิกัด | ลองจิจูด/ละติจูด (องศา, ลำดับ GeoJSON `[lng, lat]`) ไม่มีการ project ลงระนาบ ระยะทางคำนวณบนทรงกลม |
-| รัศมี | **5 กิโลเมตร** (`FLOOD_PROXIMITY_RADIUS_KM = 5`) |
-| ที่มาของจุดศูนย์กลาง | centroid ถ่วงน้ำหนักด้วยพื้นที่ของกลุ่มน้ำท่วมหลัก (snap ไปยังสมาชิกที่ใหญ่สุดหากเลื่อนหลุดกลุ่ม) |
-| ประมวลผลฝั่ง server / preprocessing | จัดกลุ่ม → หาจุดศูนย์กลาง → สร้างวงกลม → คลิปพอลิกอนน้ำท่วม → ทดสอบโรงพยาบาล → คำนวณ bounds |
-| ประมวลผลฝั่ง browser | เรนเดอร์วงกลม + จุดศูนย์กลาง + พอลิกอนน้ำท่วมที่คลิปแล้ว + จุดโรงพยาบาลที่ตรงเงื่อนไข และเลื่อนกล้องให้พอดี bounds |
+| Flood snapshot date | **18 December 2025** (`2025-12-18`) |
+| Flood geometry source | Real SAR snapshot (GISTDA/Vallaris) — acquisitions `S1A_20251218_0603, S1A_20251218_1829`, stored as `detail.json.gz` (polygons / multipolygons) |
+| Hospital point dataset | `public/data/hospitals.geojson` — real public hospital points (10k+ nationwide) |
+| Coordinate system | Longitude/latitude (degrees, GeoJSON order `[lng, lat]`). No planar projection; distances are computed on a sphere |
+| Radius | **5 kilometres** (`FLOOD_PROXIMITY_RADIUS_KM = 5`) |
+| Origin of the center | Area-weighted centroid of the main flood cluster (snapped to the largest member if the centroid falls outside the cluster) |
+| Server-side / preprocessing work | cluster → find center → build circle → clip flood polygons → test hospitals → compute bounds |
+| Browser-side work | Render the circle, the center, the clipped flood polygons and the matching hospital points, then fit the camera to the bounds |
 
-การวิเคราะห์ทั้งหมด (ระยะทาง, การกรอง) รันที่ **`/api/flood-buffer`** บนเซิร์ฟเวอร์
-หรือถูก precompute ไว้ล่วงหน้าเป็น asset `flood/2025-12-18/analysis-5km.json.gz`
-โดย pipeline `bun run build:flood` — เบราว์เซอร์ **ไม่เคย** ดาวน์โหลดหรือประมวลผล
-GeoJSON น้ำท่วมดิบทั้งชุด มันได้รับเฉพาะผลลัพธ์ที่คลิป/กรองแล้วเท่านั้น
+All of the analysis (distances, filtering) runs on the server at **`/api/flood-buffer`**,
+or is precomputed into the asset `flood/2025-12-18/analysis-5km.json.gz` by the
+`bun run build:flood` pipeline. The browser **never** downloads or processes the full raw
+flood GeoJSON — it only receives the clipped/filtered result.
 
-> 🔒 เอกสารนี้ไม่เปิดเผย API key, credential หรือ URL ส่วนตัวใด ๆ — ทั้งหมดอยู่ใน
-> `.env.local` (ไม่คอมมิต) และเข้าถึงผ่าน `configs/endpoint.ts` เท่านั้น
+> 🔒 This document exposes no API keys, credentials or private URLs — those live in
+> `.env.local` (not committed) and are accessed only through `configs/endpoint.ts`.
 
 ---
 
-## Calculation pipeline — ลำดับการคำนวณจริง
+## Calculation pipeline — the real sequence
 
-ลำดับด้านล่างตรงกับฟังก์ชัน `analyzeFloodRadius()` ใน
-`src/lib/flood-radius-analysis.ts` และการเรนเดอร์ใน `morphism-view.tsx`
+The sequence below matches `analyzeFloodRadius()` in
+`src/lib/flood-radius-analysis.ts` and the rendering in `morphism-view.tsx`.
 
-1. **โหลดชุดข้อมูลน้ำท่วมจริงที่เลือก** — สแนปช็อต `2025-12-18` (`loadFloodDetail`)
-2. **ระบุกลุ่มน้ำท่วมหลัก** — จัดกลุ่มฟีเจอร์ด้วย grid + union-find (8-neighbour ที่ระยะ
-   `cellKm = 2`) แล้วเลือกกลุ่มที่พื้นที่รวมมากที่สุด (จำกัดสูงสุด 3 วงเฉพาะกลุ่มใหญ่ที่แยกกันชัดเจน)
-3. **คำนวณจุดศูนย์กลางตัวแทน** — centroid ถ่วงน้ำหนักด้วยพื้นที่ (`f_area`/`_area`, กม.²)
-   ของสมาชิกกลุ่ม พร้อมการันตี point-on-surface (ถ้า centroid เลื่อนออกนอกกลุ่ม จะ snap
-   ไปยัง center ของสมาชิกที่ใหญ่ที่สุด)
-4. **สร้างวงกลม geodesic รัศมี 5 กม.** — `geodesicCircle()` เดินจุดปลายทาง 96 ส่วน
-   รอบทิศทาง 0–360° ด้วยสูตร destination บนทรงกลม
-5. **เลือกพอลิกอนน้ำท่วมที่ตัดกับวงกลม** เพื่อแสดงผล — เก็บเฉพาะฟีเจอร์ที่ระยะต่ำสุดถึงจุดศูนย์กลาง
-   ≤ 5 กม. (พอลิกอนที่อยู่นอกวงกลมทั้งหมดถูกตัดทิ้ง เรขาคณิตในวงคงของเดิมไม่ถูกดัดแปลง)
-6. **ทดสอบจุดโรงพยาบาลกับวงกลมเดียวกัน** — หาโรงพยาบาลที่ `haversine(center, hospital) ≤ 5 กม.`
-7. **คืนเฉพาะโรงพยาบาลที่อยู่ในหรือบนขอบวงกลม** พร้อมแนบ `distanceKm` และธง `risk: true`
-8. **คำนวณ bounds ของผลลัพธ์และเรนเดอร์** — กรอบสี่เหลี่ยมครอบวงกลม (⊇ โรงพยาบาลที่ตรงทุกจุด)
-   ใช้เลื่อนกล้อง แล้ววาดวงกลม/จุดศูนย์กลาง/น้ำท่วมที่คลิป/หมุดโรงพยาบาลสีแดง
+1. **Load the selected real flood dataset** — snapshot `2025-12-18` (`loadFloodDetail`)
+2. **Identify the main flood cluster** — group features with a grid + union-find
+   (8-neighbour at `cellKm = 2`), then select the cluster with the largest total area
+   (capped at 3 circles, only for large, clearly separated clusters)
+3. **Compute a representative center** — area-weighted centroid (`f_area`/`_area`, km²)
+   of the cluster members, with a point-on-surface guarantee (if the centroid drifts
+   outside the cluster it snaps to the center of the largest member)
+4. **Build a geodesic circle with a 5 km radius** — `geodesicCircle()` walks 96 destination
+   points around 0–360° using the spherical destination formula
+5. **Select the flood polygons intersecting the circle** for display — keep only features
+   whose minimum distance to the center is ≤ 5 km (polygons entirely outside the circle are
+   dropped; the geometry inside the circle is kept unmodified)
+6. **Test hospital points against the same circle** — find hospitals where
+   `haversine(center, hospital) ≤ 5 km`
+7. **Return only hospitals inside or on the circle's edge**, annotated with `distanceKm`
+   and a `risk: true` flag
+8. **Compute the result bounds and render** — a bounding box around the circle
+   (⊇ every matching hospital) is used to move the camera, then the circle, center,
+   clipped flood polygons and red hospital markers are drawn
 
-### แผนภาพ pipeline
+### Pipeline diagram
 
 ```mermaid
 flowchart TD
-    A[โหลดสแนปช็อตน้ำท่วมจริง 2025-12-18] --> B[จัดกลุ่มฟีเจอร์ grid + union-find]
-    B --> C[เลือกกลุ่มน้ำท่วมหลัก พื้นที่มากสุด]
-    C --> D[คำนวณจุดศูนย์กลางตัวแทน centroid ถ่วงน้ำหนักพื้นที่]
-    D --> E[สร้างวงกลม geodesic รัศมี 5 กม. 96 ส่วน]
-    E --> F[คลิปพอลิกอนน้ำท่วมที่ตัดกับวงกลม เพื่อแสดงผล]
-    E --> G[ทดสอบโรงพยาบาล haversine center hospital ≤ 5 กม.]
-    G --> H[คืนโรงพยาบาลในหรือบนขอบวงกลม + distanceKm]
-    F --> I[คำนวณ bounds และเรนเดอร์บนแผนที่]
+    A[Load real flood snapshot 2025-12-18] --> B[Cluster features: grid + union-find]
+    B --> C[Select main flood cluster: largest area]
+    C --> D[Compute representative center: area-weighted centroid]
+    D --> E[Build geodesic circle: 5 km radius, 96 segments]
+    E --> F[Clip flood polygons intersecting the circle for display]
+    E --> G[Test hospitals: haversine center to hospital <= 5 km]
+    G --> H[Return hospitals inside or on the circle + distanceKm]
+    F --> I[Compute bounds and render on the map]
     H --> I
 ```
 
 ---
 
-## Mathematical definition — นิยามทางคณิตศาสตร์
+## Mathematical definition
 
-### วงกลมวิเคราะห์
+### The analysis circle
 
 $$
 C = \{\, p \mid d(p, c) \le 5\ \text{km} \,\}
 $$
 
-โดย
-- $c$ = จุดศูนย์กลางวิเคราะห์ (analysis center)
-- $p$ = ตำแหน่งภูมิศาสตร์ใด ๆ
-- $d$ = ระยะทาง geodesic บนพื้นโลก
+where
+- $c$ = the analysis center
+- $p$ = any geographic position
+- $d$ = geodesic distance on the Earth's surface
 
-### สูตรระยะทาง geodesic ที่โค้ดใช้จริง — Haversine
+### The geodesic distance formula the code actually uses — Haversine
 
-ฟังก์ชัน `haversineKm()` ใช้สูตร Haversine กับรัศมีเฉลี่ยของโลก
-$R = 6371.0088\ \text{km}$ (ค่าคงที่ `EARTH_R_KM`) ละติจูด/ลองจิจูดถูกแปลงเป็นเรเดียนก่อน:
+`haversineKm()` uses the Haversine formula with the Earth's mean radius
+$R = 6371.0088\ \text{km}$ (the `EARTH_R_KM` constant). Latitude/longitude are converted
+to radians first:
 
 $$
 a = \sin^2\!\left(\frac{\Delta\varphi}{2}\right) + \cos\varphi_1 \cos\varphi_2 \sin^2\!\left(\frac{\Delta\lambda}{2}\right)
@@ -118,154 +125,168 @@ $$
 d = 2R \cdot \operatorname{atan2}\!\left(\sqrt{a},\ \sqrt{1 - a}\right)
 $$
 
-โดย $\varphi$ = ละติจูด (เรเดียน), $\lambda$ = ลองจิจูด (เรเดียน),
-$\Delta\varphi = \varphi_2 - \varphi_1$, $\Delta\lambda = \lambda_2 - \lambda_1$
+where $\varphi$ = latitude (radians), $\lambda$ = longitude (radians),
+$\Delta\varphi = \varphi_2 - \varphi_1$, $\Delta\lambda = \lambda_2 - \lambda_1$.
 
-วงกลมที่แสดงถูกสร้างด้วยสูตร **destination บนทรงกลม** (`geodesicCircle` / `destination`)
-ที่สอดคล้องกับ Haversine เดียวกัน จึงเป็นวงกลม geodesic จริง ไม่ใช่วงรีบนระนาบ
+The displayed circle is generated with the **spherical destination formula**
+(`geodesicCircle` / `destination`), consistent with the same Haversine model — so it is a
+true geodesic circle, not an ellipse on a plane.
 
-### การรวมโรงพยาบาล
+### Hospital inclusion
 
-โรงพยาบาล $h$ ถูกรวมเมื่อ:
+A hospital $h$ is included when:
 
 $$
 d(h, c) \le 5\ \text{km}
 $$
 
-(เมื่อมีหลายวง จะใช้ระยะถึงจุดศูนย์กลางที่ **ใกล้ที่สุด**; ค่า `distanceKm` ที่คืน
-คือระยะ Haversine ถึงจุดศูนย์กลางที่ใกล้ที่สุด)
+(With multiple circles, the distance to the **nearest** center is used; the returned
+`distanceKm` is the Haversine distance to that nearest center.)
 
-### เรขาคณิตน้ำท่วมที่แสดง
+### Displayed flood geometry
 
 $$
 \text{DisplayedFlood} = \{\, f \in \text{FloodFeatures} \mid f \cap C \ne \varnothing \,\}
 $$
 
-พอลิกอน $f$ ถือว่า "ตัดกับวงกลม" เมื่อระยะต่ำสุดจากจุดศูนย์กลาง $c$ ถึงพอลิกอน
-(รวมกรณีจุดศูนย์กลางอยู่ในพอลิกอน = 0) มีค่า $\le 5$ กม.
+A polygon $f$ counts as "intersecting the circle" when the minimum distance from the
+center $c$ to the polygon (including the case where the center is inside the polygon = 0)
+is $\le 5$ km.
 
-> **หมายเหตุความแม่นยำ (ตรงตามโค้ด):** การทดสอบพอลิกอน–วงกลมใช้ระยะแบบ
-> **equirectangular** ใน `distanceToFloodGeometryKm()` (`KM_PER_DEG_LAT = 110.574`,
-> `kmPerDegLon = 111.32·cos φ`) ซึ่งเป็นการประมาณ ส่วนวงกลมที่แสดงและการทดสอบโรงพยาบาล
-> ใช้ **Haversine** ความคลาดเคลื่อนระหว่างสองวิธีที่สเกล 5 กม. น้อยกว่า ~1% (ดู
-> [Accuracy and limitations](#accuracy-and-limitations--ความแม่นยำและข้อจำกัด))
+> **Accuracy note (matches the code):** the polygon–circle test uses an
+> **equirectangular** distance in `distanceToFloodGeometryKm()`
+> (`KM_PER_DEG_LAT = 110.574`, `kmPerDegLon = 111.32·cos φ`), which is an approximation,
+> while the displayed circle and the hospital test use **Haversine**. The divergence
+> between the two methods at a 5 km scale is under ~1% (see
+> [Accuracy and limitations](#accuracy-and-limitations)).
 
-### เงื่อนไขขอบเขต (boundary condition)
+### Boundary condition
 
-เงื่อนไขใช้ `≤` ไม่ใช่ `<` ทั้งในโค้ดโรงพยาบาล (`best <= radiusKm`) และพอลิกอน
-ดังนั้นโรงพยาบาลที่อยู่ **พอดี 5.000 กม.** จากจุดศูนย์กลาง **ถือว่ารวมอยู่ในผลลัพธ์**
-(อยู่บนขอบวงกลมก็นับ)
+The condition uses `≤`, not `<` — both in the hospital code (`best <= radiusKm`) and for
+polygons. So a hospital exactly **5.000 km** from the center **is included** in the
+result (sitting on the circle's edge still counts).
 
 ---
 
-## Difference — ความต่างระหว่างวงกลมวิเคราะห์กับ polygon buffer
+## Difference — analysis circle vs polygon buffer
 
-| ประเด็น | เดโมปัจจุบัน (Circular radius) | ทางเลือก GIS (Polygon buffer) |
+| Aspect | Current demo (circular radius) | GIS alternative (polygon buffer) |
 | --- | --- | --- |
-| จุดอ้างอิงระยะ | จุดศูนย์กลางวิเคราะห์ **หนึ่งจุด** ต่อกลุ่ม | **ทุกขอบ** ของทุกพอลิกอนน้ำท่วม |
-| รูปทรงพื้นที่ | วงกลม geodesic รัศมี 5 กม. | แถบ offset 5 กม. ตามรูปร่างน้ำท่วมจริง |
-| การนับโรงพยาบาล | $d(h, c) \le 5$ กม. | $d(h, \text{polygon}) \le 5$ กม. |
-| ความหมาย | "ใกล้ **ศูนย์กลาง** พื้นที่น้ำท่วมหลัก" | "ใกล้ **ขอบน้ำ** จุดใดก็ได้" |
+| Distance reference | **One** analysis center per cluster | **Every edge** of every flood polygon |
+| Shape of the area | Geodesic circle, 5 km radius | 5 km offset band following the real flood shape |
+| Hospital inclusion | $d(h, c) \le 5$ km | $d(h, \text{polygon}) \le 5$ km |
+| Meaning | "Close to the **center** of the main flood area" | "Close to **any point on the water's edge**" |
 
-**ทำไมเดโมจึงเลือกแบบวงกลมโดยตั้งใจ**
-- สื่อสารง่ายและอ่านง่ายในการนำเสนอ — วงกลม + จุดศูนย์กลางเดียวเข้าใจได้ทันที
-- โฟกัสไปที่ *กลุ่มน้ำท่วมหลักที่เลือก* ไม่ใช่ทุกหย่อมน้ำทั่วประเทศ
-- คำนวณเสถียร/เร็ว และให้ผลลัพธ์แบบ deterministic เหมาะกับ pipeline preprocess ล่วงหน้า
+**Why the demo deliberately chooses the circular model**
+- Easy to communicate and read during a presentation — one circle plus one center is
+  immediately understandable
+- It focuses on the *selected main flood cluster*, not every patch of water nationwide
+- It is stable, fast and deterministic, which suits a precomputed asset pipeline
 
-**ทำไมจึงซ่อนพอลิกอนน้ำท่วมนอกวงกลม**
-เพื่อให้ผู้ชมโฟกัสที่ขอบเขตการวิเคราะห์เดียวกับที่ใช้ตัดสินโรงพยาบาล
-ลดสิ่งรบกวนสายตา และทำให้ "สิ่งที่ AI เห็น" ตรงกับ "สิ่งที่คำนวณ" — พอลิกอนที่อยู่นอก
-รัศมีทั้งหมดถูกกรองทิ้งฝั่งเซิร์ฟเวอร์ (ในเดโม 2025-12-18 เหลือ **591** จาก
-**14,648** ฟีเจอร์)
+**Why flood polygons outside the circle are hidden**
+So the audience focuses on the same analysis boundary that decides the hospitals, which
+reduces visual noise and keeps "what the AI sees" identical to "what was computed". Every
+polygon outside the radius is filtered out server-side (in the 2025-12-18 demo, **591** of
+**14,648** features remain).
 
 ---
 
-## Worked example — ตัวอย่างจากเดโมจริง
+## Worked example — from the real demo
 
-ค่าทั้งหมดด้านล่างอ่านจาก metadata การวิเคราะห์จริง
-(`public/flood-assets/flood/2025-12-18/analysis-5km.json.gz`) ไม่ได้แต่งขึ้น
+Every value below is read from the real analysis metadata
+(`public/flood-assets/flood/2025-12-18/analysis-5km.json.gz`). None of it is invented.
 
-| รายการ | ค่า |
+| Item | Value |
 | --- | --- |
-| สแนปช็อต | 18 ธันวาคม 2025 (`2025-12-18`) |
-| ไฟล์ acquisition | `S1A_20251218_0603, S1A_20251218_1829` |
-| รัศมี | 5 กม. |
-| กลุ่มน้ำท่วมที่เลือก | 1 กลุ่ม (พื้นที่รวม ≈ 601.52 กม.², 9,551 ฟีเจอร์สมาชิก) |
-| จุดศูนย์กลางวิเคราะห์ | `lng 100.25063, lat 14.34462` |
-| กรอบผลลัพธ์ (bounds) | `[100.20422, 14.29965, 100.29704, 14.38958]` |
-| พอลิกอนน้ำท่วมที่แสดง (คลิปแล้ว) | 591 จาก 14,648 ฟีเจอร์ |
-| **โรงพยาบาลที่ตรงเงื่อนไข** | **2 แห่ง** |
+| Snapshot | 18 December 2025 (`2025-12-18`) |
+| Acquisitions | `S1A_20251218_0603, S1A_20251218_1829` |
+| Radius | 5 km |
+| Selected flood cluster | 1 cluster (total area ≈ 601.52 km², 9,551 member features) |
+| Analysis center | `lng 100.25063, lat 14.34462` |
+| Result bounds | `[100.20422, 14.29965, 100.29704, 14.38958]` |
+| Displayed flood polygons (clipped) | 591 of 14,648 features |
+| **Matching hospitals** | **2** |
 
-โรงพยาบาลที่พบ (ชื่อ/ระยะเป็นค่าจริงจาก metadata):
+The hospitals found (names and distances are the real values from the metadata):
 
-| โรงพยาบาล | ระยะถึงจุดศูนย์กลาง |
+| Hospital | Distance to center |
 | --- | --- |
-| โรงพยาบาลส่งเสริมสุขภาพตำบลไผ่กองดิน จังหวัดสุพรรณบุรี | 1.38 กม. |
-| โรงพยาบาลส่งเสริมสุขภาพตำบลองครักษ์ จังหวัดสุพรรณบุรี | 4.52 กม. |
+| โรงพยาบาลส่งเสริมสุขภาพตำบลไผ่กองดิน, Suphan Buri (Phai Kong Din sub-district health promoting hospital) | 1.38 km |
+| โรงพยาบาลส่งเสริมสุขภาพตำบลองครักษ์, Suphan Buri (Ongkharak sub-district health promoting hospital) | 4.52 km |
 
-ทั้งสองแห่งมีระยะ ≤ 5 กม. จึงถูกรวม และถูกไฮไลต์ด้วยสีแดงระบบ (semantic error/danger)
-บนแผนที่
-
----
-
-## Accuracy and limitations — ความแม่นยำและข้อจำกัด
-
-- **Geodesic vs planar** — วงกลมและการทดสอบโรงพยาบาลใช้ Haversine (ทรงกลม, $R = 6371.0088$ กม.)
-  ส่วนการคลิปพอลิกอนใช้ equirectangular approximation ทั้งสองไม่ใช่ระยะบน ellipsoid (WGS84 จริง)
-  แต่ที่สเกล 5 กม. ความคลาดเคลื่อน ≪ 1%
-- **ความแม่นยำของจุดศูนย์กลาง** — เป็น centroid ถ่วงน้ำหนักพื้นที่ *หนึ่งจุด* แทนกลุ่มทั้งกลุ่ม
-  จึงเป็นค่าตัวแทน ไม่ใช่ "จุดน้ำท่วมที่แย่ที่สุด" สำหรับกลุ่มรูปร่างประหลาดจะ snap ไปยังสมาชิกใหญ่สุด
-- **ความละเอียดข้อมูลต้นทาง** — พอลิกอนน้ำท่วมมาจากการตรวจจับด้วยภาพ SAR ความละเอียด/ขอบเขต
-  ขึ้นกับคุณภาพภาพและการประมวลผลต้นทาง
-- **ความแม่นยำตำแหน่งโรงพยาบาล** — เป็นจุด (point) จากชุดข้อมูล ไม่ใช่รูปอาคารจริง
-- **ข้อจำกัดการตรวจจับน้ำท่วม** — SAR อาจพลาด/เกินในบางพื้นที่ (เงาภูมิประเทศ, พืชคลุม, เมือง)
-- **สแนปช็อต ≠ ข้อมูลเรียลไทม์** — เป็นภาพ ณ วันที่ระบุ (18 ธ.ค. 2025) ไม่ใช่สถานการณ์ปัจจุบัน
-- **"ใกล้" ≠ "เสี่ยงแน่นอน"** — ผลลัพธ์หมายถึง *ความใกล้ภายในรัศมีวิเคราะห์* เท่านั้น
-  ไม่ได้พิสูจน์ว่าน้ำท่วมถึงตัวโรงพยาบาล
-- **กลุ่มที่เลือก ≠ น้ำท่วมทั้งประเทศ** — วิเคราะห์เฉพาะกลุ่มน้ำท่วมหลักที่เลือก (สูงสุด 3 วง)
-  ไม่ใช่ทุกพื้นที่น้ำท่วมทั่วประเทศพร้อมกัน
+Both are ≤ 5 km, so both are included and highlighted in the system's red
+(semantic error/danger) colour on the map.
 
 ---
 
-## Presenter FAQ — คำถามที่พบบ่อยสำหรับผู้นำเสนอ
+## Accuracy and limitations
 
-**ทำไม buffer ถึงเป็นวงกลม?**
-เพราะเดโมวัดระยะจาก *จุดศูนย์กลางวิเคราะห์หนึ่งจุด* ของกลุ่มน้ำท่วมหลัก เซตของจุดที่ระยะ
-≤ 5 กม. จากจุดเดียวคือวงกลม (geodesic) โดยนิยาม
-
-**รัศมีเท่ากับ 5 กม. เป๊ะไหม?**
-ใช่ — `FLOOD_PROXIMITY_RADIUS_KM = 5` และวงกลมสร้างที่ 5.000 กม. พอดี เงื่อนไขเป็น `≤`
-โรงพยาบาลที่อยู่พอดี 5 กม. ก็นับรวม
-
-**โรงพยาบาลที่อยู่ในพอลิกอนน้ำท่วมถูกนับด้วยไหม?**
-นับ ถ้าระยะถึง *จุดศูนย์กลาง* ≤ 5 กม. — เกณฑ์คือระยะถึงจุดศูนย์กลาง ไม่ใช่การอยู่ในพอลิกอน
-(โรงพยาบาลในเขตน้ำท่วมแต่ห่างจุดศูนย์กลาง > 5 กม. จะไม่ถูกนับ)
-
-**ทำไมซ่อนพอลิกอนน้ำท่วมนอกวงกลม?**
-เพื่อโฟกัสขอบเขตการวิเคราะห์และให้ภาพตรงกับสิ่งที่คำนวณ พอลิกอนนอกรัศมีถูกกรองทิ้งฝั่งเซิร์ฟเวอร์
-เรขาคณิตในวงยังเป็นของจริงไม่ถูกดัดแปลง
-
-**คำนวณในเบราว์เซอร์หรือเปล่า?**
-ไม่ การวิเคราะห์รันฝั่งเซิร์ฟเวอร์ (`/api/flood-buffer`) หรือ precompute ล่วงหน้า
-เบราว์เซอร์รับเฉพาะผลลัพธ์ (วงกลม/จุดศูนย์กลาง/น้ำท่วมที่คลิป/โรงพยาบาล) มาเรนเดอร์
-
-**ผลลัพธ์พิสูจน์ว่าโรงพยาบาลถูกน้ำท่วมไหม?**
-ไม่ มันบอกเพียง *ความใกล้ภายในรัศมี 5 กม.* จากจุดศูนย์กลางกลุ่มน้ำท่วม ไม่ใช่การยืนยันน้ำท่วมถึงตัว
-
-**เปลี่ยนรัศมีได้ไหม?**
-ได้ในเชิงเทคนิค — ปรับ `FLOOD_PROXIMITY_RADIUS_KM` (และ `radiusKm` option) แล้ว rebuild asset
-เดโมปัจจุบันตรึงไว้ที่ 5 กม.
-
-**วิเคราะห์หลายกลุ่มน้ำท่วมได้ไหม?**
-ได้ โมเดลรองรับสูงสุด 3 วง (`maxCircles`) สำหรับกลุ่มใหญ่ที่แยกกันชัดเจน โรงพยาบาลถูกทดสอบกับ
-*ยูเนียนของวงกลม* เดโม 2025-12-18 เข้าเงื่อนไขเพียง 1 กลุ่ม
+- **Geodesic vs planar** — the circle and the hospital test use Haversine (spherical,
+  $R = 6371.0088$ km), while polygon clipping uses an equirectangular approximation.
+  Neither is an ellipsoidal (true WGS84) distance, but at a 5 km scale the error is ≪ 1%
+- **Accuracy of the center** — it is a *single* area-weighted centroid representing the
+  whole cluster, so it is a representative point, not the "worst flooded point". For
+  oddly shaped clusters it snaps to the largest member
+- **Source data resolution** — flood polygons come from SAR image detection; their
+  resolution and extent depend on image quality and upstream processing
+- **Hospital position accuracy** — hospitals are points from the dataset, not real
+  building footprints
+- **Flood detection limits** — SAR can miss or over-detect in some areas (terrain shadow,
+  vegetation cover, urban areas)
+- **A snapshot is not real-time data** — it is the situation on the stated date
+  (18 Dec 2025), not the current situation
+- **"Near" ≠ "definitely at risk"** — the result only means *proximity within the analysis
+  radius*; it does not prove that flood water reached the hospital
+- **The selected cluster ≠ nationwide flooding** — only the selected main flood cluster is
+  analysed (up to 3 circles), not every flooded area in the country at once
 
 ---
 
-## หมายเหตุความสอดคล้องระหว่างเอกสารกับโค้ด
+## Presenter FAQ
 
-ตรวจสอบแล้วว่าตรงกับโค้ด ณ วันจัดทำ ประเด็นเดียวที่ควรระบุให้ชัด (ไม่ใช่ข้อผิดพลาด แต่เป็น
-รายละเอียดการ implement): **วงกลม + การทดสอบโรงพยาบาลใช้ Haversine ขณะที่การคลิปพอลิกอน
-น้ำท่วมใช้ equirectangular approximation** — ต่างวิธีแต่ผลต่างที่สเกล 5 กม. ไม่มีนัยสำคัญ
-หากอนาคตต้องการความสม่ำเสมอ 100% สามารถเปลี่ยน `distanceToFloodGeometryKm` ให้ใช้ Haversine
-ได้โดยไม่กระทบผลลัพธ์โรงพยาบาลหรือจำนวน 2 แห่ง
+**Why is the buffer a circle?**
+Because the demo measures distance from a *single analysis center* of the main flood
+cluster. The set of points within ≤ 5 km of one point is, by definition, a (geodesic)
+circle.
+
+**Is the radius exactly 5 km?**
+Yes — `FLOOD_PROXIMITY_RADIUS_KM = 5`, and the circle is built at exactly 5.000 km. The
+condition is `≤`, so a hospital exactly 5 km away is still counted.
+
+**Are hospitals inside a flood polygon counted too?**
+Yes, if their distance to the *center* is ≤ 5 km. The criterion is distance to the center,
+not containment in a polygon (a hospital inside a flooded area but more than 5 km from the
+center is not counted).
+
+**Why hide the flood polygons outside the circle?**
+To focus on the analysis boundary and keep the picture identical to what was computed.
+Polygons outside the radius are filtered out server-side; the geometry inside the circle is
+real and unmodified.
+
+**Is this computed in the browser?**
+No. The analysis runs server-side (`/api/flood-buffer`) or is precomputed. The browser only
+receives the result (circle, center, clipped flood, hospitals) and renders it.
+
+**Does the result prove the hospitals were flooded?**
+No. It only indicates *proximity within a 5 km radius* of the flood cluster's center — it is
+not a confirmation that water reached them.
+
+**Can the radius be changed?**
+Technically yes — adjust `FLOOD_PROXIMITY_RADIUS_KM` (and the `radiusKm` option) and rebuild
+the asset. The current demo is fixed at 5 km.
+
+**Can several flood clusters be analysed?**
+Yes. The model supports up to 3 circles (`maxCircles`) for large, clearly separated
+clusters, and hospitals are tested against the *union of the circles*. In the 2025-12-18
+demo only 1 cluster qualified.
+
+---
+
+## Doc ↔ code consistency note
+
+Verified against the code as of writing. The one detail worth stating explicitly (not a bug,
+just an implementation detail): **the circle and the hospital test use Haversine, while
+flood-polygon clipping uses an equirectangular approximation.** Different methods, but the
+difference at a 5 km scale is not significant. If 100% consistency is wanted later,
+`distanceToFloodGeometryKm` can be switched to Haversine without affecting the hospital
+results or the count of 2.
