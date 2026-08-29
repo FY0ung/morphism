@@ -94,3 +94,12 @@ public/flood-assets/
 
 # npm lockfile — package manager policy is Bun (bun.lock is the source of truth)
 package-lock.json
+
+# ---------------------------------------------------------------------------
+# temporary files
+# ---------------------------------------------------------------------------
+/_to_delete
+/CLAUDE.md
+/DESIGN.md
+/AGENTS.md
+/ARCHITECTURE.md

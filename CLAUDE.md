@@ -1,2 +1,0 @@
-@AGENTS.md
-@ARCHITECTURE.md
