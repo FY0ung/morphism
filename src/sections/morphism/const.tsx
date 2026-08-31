@@ -84,13 +84,19 @@ import { totalOfCounts, type ProvinceCounts } from "@/lib/hospital-stats";
 export type Lang = "en" | "th" | "ja";
 
 /** Suggestion chips — `labelKey` is also the message sent when tapped. */
+// Order matters: c7 (exact flood date), c8 (mid-month period) and c6 (5 km
+// hospital analysis) lead, so the first three chips demo the flood flows.
+// Each chip's LABEL is the message sent through the normal assistant flow —
+// no chip is special-cased anywhere.
 export const SUGGESTION_CHIPS = [
+  "morphism.chips.c7",
+  "morphism.chips.c8",
+  "morphism.chips.c6",
   "morphism.chips.c1",
   "morphism.chips.c2",
   "morphism.chips.c3",
   "morphism.chips.c4",
   "morphism.chips.c5",
-  "morphism.chips.c6",
 ] as const;
 
 /** Layer metadata for the panel + legend. Swatch colours use token utilities. */

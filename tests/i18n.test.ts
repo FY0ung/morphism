@@ -96,9 +96,10 @@ export function run(): void {
     "ja buffer result must not leak English words",
   );
 
-  // The compact selector label for ja is "JP" (locale code stays `ja`).
+  // The JP 5 km hospital-analysis chip is natural Japanese (its label is the
+  // message actually sent — see tests/chip-prompts.test.ts for the routing).
   assert.equal(
     getLeaf(ja as unknown as Json, "morphism.chips.c6"),
-    "洪水地域から5km以内の病院",
+    "先週の洪水から5km以内の病院",
   );
 }

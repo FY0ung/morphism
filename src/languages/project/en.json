@@ -100,7 +100,9 @@
       "c3": "How many hospitals are in the North?",
       "c4": "Compare hospitals: North vs Northeast",
       "c5": "Recent Songkran flooding events",
-      "c6": "Hospitals within 5 km of flood areas"
+      "c6": "Hospitals within 5 kilometers of last week's flood",
+      "c7": "Flooded areas on October 13, 2025",
+      "c8": "Flooding in mid-October"
     },
     "steps": {
       "parse": "Interpreting the question",

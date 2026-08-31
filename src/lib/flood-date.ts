@@ -64,18 +64,20 @@ const MONTH_ALIASES: Record<string, number> = {};
 const add = (m: number, ...forms: string[]) => {
   for (const f of forms) MONTH_ALIASES[f.toLowerCase()] = m;
 };
-add(1, "มกราคม", "ม.ค.", "มกรา", "january", "jan");
-add(2, "กุมภาพันธ์", "ก.พ.", "กุมภา", "february", "feb");
-add(3, "มีนาคม", "มี.ค.", "มีนา", "march", "mar");
-add(4, "เมษายน", "เม.ย.", "เมษา", "april", "apr");
-add(5, "พฤษภาคม", "พ.ค.", "พฤษภา", "may");
-add(6, "มิถุนายน", "มิ.ย.", "มิถุนา", "june", "jun");
-add(7, "กรกฎาคม", "ก.ค.", "กรกฎา", "july", "jul");
-add(8, "สิงหาคม", "ส.ค.", "สิงหา", "august", "aug");
-add(9, "กันยายน", "ก.ย.", "กันยา", "september", "sep", "sept");
-add(10, "ตุลาคม", "ต.ค.", "ตุลา", "october", "oct");
-add(11, "พฤศจิกายน", "พ.ย.", "พฤศจิกา", "november", "nov");
-add(12, "ธันวาคม", "ธ.ค.", "ธันวา", "december", "dec");
+// Japanese months are the number + 月 ("10月"), so they are registered as
+// aliases here like every other spelling — the resolver itself is unchanged.
+add(1, "มกราคม", "ม.ค.", "มกรา", "january", "jan", "1月");
+add(2, "กุมภาพันธ์", "ก.พ.", "กุมภา", "february", "feb", "2月");
+add(3, "มีนาคม", "มี.ค.", "มีนา", "march", "mar", "3月");
+add(4, "เมษายน", "เม.ย.", "เมษา", "april", "apr", "4月");
+add(5, "พฤษภาคม", "พ.ค.", "พฤษภา", "may", "5月");
+add(6, "มิถุนายน", "มิ.ย.", "มิถุนา", "june", "jun", "6月");
+add(7, "กรกฎาคม", "ก.ค.", "กรกฎา", "july", "jul", "7月");
+add(8, "สิงหาคม", "ส.ค.", "สิงหา", "august", "aug", "8月");
+add(9, "กันยายน", "ก.ย.", "กันยา", "september", "sep", "sept", "9月");
+add(10, "ตุลาคม", "ต.ค.", "ตุลา", "october", "oct", "10月");
+add(11, "พฤศจิกายน", "พ.ย.", "พฤศจิกา", "november", "nov", "11月");
+add(12, "ธันวาคม", "ธ.ค.", "ธันวา", "december", "dec", "12月");
 
 // Match longest patterns first so a canonical name is not shadowed by a shorter
 // colloquial prefix it contains.
@@ -122,16 +124,18 @@ export function detectFloodMonth(raw: string): number | undefined {
 export type MonthPeriod = "early" | "mid" | "late";
 
 /**
- * Detect a "part of the month" phrase in free text (Thai or English), e.g.
- * "กลางเดือนตุลา" → "mid". Only fires on the explicit month-part idioms so it
- * never clashes with the ภาคกลาง (central region) keyword.
+ * Detect a "part of the month" phrase in free text (Thai, English or
+ * Japanese), e.g. "กลางเดือนตุลา" / "mid-October" / "10月中旬" → "mid". Only
+ * fires on the explicit month-part idioms so it never clashes with the
+ * ภาคกลาง (central region) keyword. The Japanese 上旬/中旬/下旬 are added as
+ * ALIASES of the same three periods — the window maths below is untouched.
  */
 export function detectMonthPeriod(raw: string): MonthPeriod | undefined {
   const l = raw.toLowerCase();
-  if (/ต้นเดือน|ช่วงต้นเดือน|\bearly\b|\bbeginning\b/.test(l)) return "early";
-  if (/ปลายเดือน|สิ้นเดือน|ช่วงปลายเดือน|\blate\b|\bend of\b/.test(l))
+  if (/ต้นเดือน|ช่วงต้นเดือน|\bearly\b|\bbeginning\b|上旬/.test(l)) return "early";
+  if (/ปลายเดือน|สิ้นเดือน|ช่วงปลายเดือน|\blate\b|\bend of\b|下旬/.test(l))
     return "late";
-  if (/กลางเดือน|ช่วงกลางเดือน|\bmid\b|\bmid-|\bmiddle\b/.test(l)) return "mid";
+  if (/กลางเดือน|ช่วงกลางเดือน|\bmid\b|\bmid-|\bmiddle\b|中旬/.test(l)) return "mid";
   return undefined;
 }
 
@@ -176,10 +180,14 @@ export function resolveFloodDate(raw: string): FloodDateResolution {
   const text = raw.trim();
   const lower = text.toLowerCase();
 
-  // 1. Year-first: yyyy-mm-dd, yyyy/mm/dd, yyyy.mm.dd, or compact yyyymmdd
-  //    (Buddhist-Era years normalised, e.g. 2568-10-13 or 25681013).
+  // 1. Year-first: yyyy-mm-dd, yyyy/mm/dd, yyyy.mm.dd, compact yyyymmdd, or the
+  //    Japanese form yyyy年M月D日 (Buddhist-Era years normalised, e.g.
+  //    2568-10-13, 25681013, 2025年10月13日). Japanese is only a SEPARATOR
+  //    spelling of the same year-month-day order, so it feeds the identical
+  //    canonicalisation below — no separate date path.
   const ymd =
     lower.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/) ??
+    lower.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/) ??
     lower.match(/(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)/);
   if (ymd) {
     const year = toGregorianYear(Number(ymd[1]));
